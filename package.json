@@ -1,0 +1,23 @@
+{
+  "name": "isomorphic-gatty",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^12.6.2",
+    "@types/pify": "^3.0.2",
+    "browserify": "^16.3.0",
+    "typescript": "^3.5.3"
+  },
+  "dependencies": {
+    "@isomorphic-git/lightning-fs": "^3.3.0",
+    "isomorphic-git": "^0.55.5",
+    "pify": "^4.0.1"
+  }
+}
