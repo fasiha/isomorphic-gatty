@@ -1,4 +1,3 @@
-import pify from 'pify';
 const LightningFS = require('@isomorphic-git/lightning-fs');
 const git = require('isomorphic-git');
 
@@ -23,7 +22,7 @@ export async function setup({dir, corsProxy, branch, depth, since, username, pas
   corsProxy = corsProxy || DEFAULT_PROXY;
 
   const fs = new LightningFS('fs', {wipe: true});
-  const pfs = pify(fs);
+  const pfs = fs.promises;
   git.plugins.set('fs', fs);
 
   await pfs.mkdir(dir);
@@ -52,32 +51,50 @@ export async function writeFileCommit({pfs, dir}: Gatty, filepath: string, conte
 }
 
 type PushResult = {
-  ok: string,
+  ok: string[],
   errors?: string[],
 };
 export async function atomicAppend({pfs, dir, username, password, token}: Gatty, filepath: string, content: string,
                                    message: string, name: string, email: string, maxRetries = 3) {
-  for (let retry = 0; retry < maxRetries; retry++) {
-    await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
-    const fullpath = `${dir}/${filepath}`;
-    let oldContents = '';
-    try {
-      await pfs.stat(fullpath)
-      oldContents = await pfs.readFile(fullpath, 'utf8');
-    } catch (e) { await pfs.writeFile(fullpath, '', 'utf8'); }
-    await pfs.writeFile(fullpath, oldContents + content, 'utf8');
-    await git.commit({dir, message, author: {name, email}});
-    const pushed: PushResult = await git.push({dir, username, password, token});
-    if (pushed.errors) {
-      const branch = await git.currentBranch({dir});
-      await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true});
-    }
-  }
-  // pull to remote
+  // pull remote (rewind if failed?)
   // write/append
   // commit
   // push
   // if push failed, roll back commit and retry, up to some maximum
+  for (let retry = 0; retry < maxRetries; retry++) {
+    await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
+    console.log('pulled latest');
+
+    const fullpath = `${dir}/${filepath}`;
+    let oldContents = '';
+    try {
+      oldContents = await pfs.readFile(fullpath, 'utf8');
+    } catch (e) {
+      // `readFile` will throw if file not found. Moving along.
+    }
+    await pfs.writeFile(fullpath, oldContents + content, 'utf8');
+    console.log('wrote file');
+
+    await git.add({dir, filepath});
+    console.log('added file');
+
+    await git.commit({dir, message, author: {name, email}});
+    console.log('committed');
+
+    const pushed: PushResult = await git.push({dir, username, password, token});
+    console.log('pushed');
+
+    if (pushed.errors) {
+      console.log('push encountered error');
+
+      const branch = await git.currentBranch({dir});
+      await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true});
+      console.log('git-reset');
+    } else {
+      return;
+    }
+  }
+  throw new Error('failed to commit');
 }
 
 type GitResetArgs = {
@@ -89,8 +106,7 @@ type GitResetArgs = {
   hard?: boolean
 };
 // Thanks to jcubic: https://github.com/isomorphic-git/isomorphic-git/issues/729#issuecomment-489523944
-async function gitReset({pfs, git, dir, ref, branch, hard}: GitResetArgs) {
-  hard = hard || false;
+async function gitReset({pfs, git, dir, ref, branch, hard = false}: GitResetArgs) {
   const re = /^HEAD~([0-9]+)$/;
   const m = ref.match(re);
   if (!m) { throw new Error(`Wrong ref ${ref}`) }
@@ -103,5 +119,5 @@ async function gitReset({pfs, git, dir, ref, branch, hard}: GitResetArgs) {
   // clear the index (if any)
   await pfs.unlink(`${dir}/.git/index`);
   // checkout the branch into the working tree
-  git.checkout({dir, ref: branch});
+  return git.checkout({dir, ref: branch});
 }
