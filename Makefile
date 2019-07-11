@@ -1,7 +1,7 @@
 TSSRC=$(wildcard *.ts)
 JSSRC=$(TSSRC:.ts=.js)
 
-all: test.bundle.js
+all: test.bundle.min.js
 
 %.js: %.ts
 	npm run build
@@ -9,6 +9,9 @@ all: test.bundle.js
 test.bundle.js: $(JSSRC)
 	npm run dist
 	echo done
+
+test.bundle.min.js: test.bundle.js
+	npm run min
 
 # Assumes VS Code is running in watch build mode
 watch:
