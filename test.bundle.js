@@ -31702,7 +31702,7 @@ function test(url, username, token, corsProxy) {
         for (let i = 0; i < 5; i++) {
             const d = new Date().toISOString();
             console.log(`### ${d} (${i})`);
-            yield index_1.atomicAppend(gatty, 'foo', 'gatty Was here! ' + i + ' on ' + d + '\n', d, 'gatty', 'gatty@aldebrn.me');
+            yield index_1.atomicAppend(gatty, 'foo', 'gatty Was here! ' + i + ' on ' + d + '\n', d, 'gatty', 'gatty');
             yield sleep(1000);
         }
         console.log('done');
