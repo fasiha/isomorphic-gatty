@@ -56,40 +56,27 @@ type PushResult = {
 };
 export async function atomicAppend({pfs, dir, username, password, token}: Gatty, filepath: string, content: string,
                                    message: string, name: string, email: string, maxRetries = 3) {
-  // pull remote (rewind if failed?)
-  // write/append
-  // commit
-  // push
-  // if push failed, roll back commit and retry, up to some maximum
   for (let retry = 0; retry < maxRetries; retry++) {
+    // pull remote (rewind if failed?)
     await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
-    console.log('pulled latest');
-
-    const fullpath = `${dir}/${filepath}`;
+    // write/append
     let oldContents = '';
+    const fullpath = `${dir}/${filepath}`;
     try {
       oldContents = await pfs.readFile(fullpath, 'utf8');
     } catch (e) {
       // `readFile` will throw if file not found. Moving along.
     }
     await pfs.writeFile(fullpath, oldContents + content, 'utf8');
-    console.log('wrote file');
-
+    // add & commit
     await git.add({dir, filepath});
-    console.log('added file');
-
     await git.commit({dir, message, author: {name, email}});
-    console.log('committed');
-
+    // push
     const pushed: PushResult = await git.push({dir, username, password, token});
-    console.log('pushed');
-
     if (pushed.errors) {
-      console.log('push encountered error');
-
+      // if push failed, roll back commit and retry, up to some maximum
       const branch = await git.currentBranch({dir});
       await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true});
-      console.log('git-reset');
     } else {
       return;
     }

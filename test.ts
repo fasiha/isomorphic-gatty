@@ -2,8 +2,8 @@ import {atomicAppend, setup} from './index';
 
 function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-export async function test(url: string, username: string, token: string) {
-  let gatty = await setup({username, token}, url);
+export async function test(url: string, username: string, token: string, corsProxy?: string) {
+  let gatty = await setup({username, token, corsProxy}, url);
   for (let i = 0; i < 5; i++) {
     const d = new Date().toISOString();
     console.log(`### ${d} (${i})`);
