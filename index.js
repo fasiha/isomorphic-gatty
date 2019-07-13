@@ -12,10 +12,8 @@ const LightningFS = require('@isomorphic-git/lightning-fs');
 const git = require('isomorphic-git');
 const DEFAULT_DIR = '/gitdir';
 const DEFAULT_PROXY = 'https://cors.isomorphic-git.org';
-function setup({ dir, corsProxy, branch, depth, since, username, password, token } = {}, url, fs) {
+function setup({ dir = DEFAULT_DIR, corsProxy = DEFAULT_PROXY, branch, depth, since, username, password, token, eventFileSizeLimit = 900 } = {}, url, fs) {
     return __awaiter(this, void 0, void 0, function* () {
-        dir = dir || DEFAULT_DIR;
-        corsProxy = corsProxy || DEFAULT_PROXY;
         if (!fs) {
             const fs = new LightningFS('fs', { wipe: true });
             git.plugins.set('fs', fs);
@@ -23,7 +21,7 @@ function setup({ dir, corsProxy, branch, depth, since, username, password, token
         const pfs = fs.promises;
         yield pfs.mkdir(dir);
         yield git.clone({ url, dir, corsProxy, ref: branch, singleBranch: true, depth, since, username, password, token });
-        return { dir, corsProxy, pfs, branch, depth, since, username, password, token };
+        return { dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit };
     });
 }
 exports.setup = setup;
@@ -151,7 +149,7 @@ function lastPointer({ pfs, dir }) {
         return makePointer(`${EVENTS_DIR}/${lastFile}`, filecontents.length);
     });
 }
-function addEvent(gatty, uid, payload, { maxchars = 999, pointer = {} } = {}) {
+function addEvent(gatty, uid, payload, pointer = {}) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!('relativeFile' in pointer && 'chars' in pointer && pointer.relativeFile)) {
             const { relativeFile, chars } = yield lastPointer(gatty);
@@ -163,7 +161,8 @@ function addEvent(gatty, uid, payload, { maxchars = 999, pointer = {} } = {}) {
         if (yield fileExists(gatty, uniqueFile)) {
             return makePointer(relativeFile, chars);
         }
-        if (chars < maxchars) {
+        const { eventFileSizeLimit } = gatty;
+        if (chars < eventFileSizeLimit) {
             // Unique file should contain pointer to BEGINNING of payload
             yield appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
             return appendFile(gatty, relativeFile, payload);
@@ -246,7 +245,7 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
         {
             let i = 0;
             for (const e of events) {
-                pointer = yield addEvent(gatty, uids[i++], e, { pointer });
+                pointer = yield addEvent(gatty, uids[i++], e, pointer);
                 filesTouched.add(pointer.relativeFile);
             }
         }
@@ -271,7 +270,8 @@ if (module === require.main) {
                 since: new Date(),
                 username: '',
                 password: '',
-                token: ''
+                token: '',
+                eventFileSizeLimit: 900
             };
             function slug(s) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, ''); }
             const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
