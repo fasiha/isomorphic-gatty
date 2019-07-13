@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "tape test-*js",
     "build": "tsc -p .",
     "dist": "browserify test.js -o test.bundle.js -s test",
     "min": "google-closure-compiler --js=test.bundle.js --js_output_file=test.bundle.min.js --language_out ECMASCRIPT_2015"
@@ -14,8 +14,11 @@
   "license": "Unlicense",
   "devDependencies": {
     "@types/node": "^12.6.2",
+    "@types/tape": "^4.2.33",
     "browserify": "^16.3.0",
     "google-closure-compiler": "^20190618.0.0",
+    "rimraf": "^2.6.3",
+    "tape": "^4.11.0",
     "typescript": "^3.5.3"
   },
   "dependencies": {

@@ -254,7 +254,7 @@ export async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: 
   // get all events that others have pushed that we lack, from lastShareUid to endPointer
   const startPointer = lastSharedUid ? await uniqueToPointer(gatty, lastSharedUid) : INIT_POINTER;
   const rawContents = await pointerToPointer(gatty, startPointer, endPointer);
-  const newEvents = rawContents.trim().split('\n');
+  const newEvents = rawContents ? rawContents.trim().split('\n') : [];
   return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents, filesTouched};
 }
 
