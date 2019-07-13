@@ -124,7 +124,8 @@ async function gitReset({pfs, git, dir, ref, branch, hard = false}: GitResetArgs
 async function fileExists({pfs, dir}: Gatty, filepath: string): Promise<boolean> {
   const fullpath = `${dir}/${filepath}`;
   try {
-    return pfs.stat(fullpath).then((res: Stats) => !res.isDirectory());
+    const res = await pfs.stat(fullpath);
+    return !res.isDirectory();
   } catch (e) { return false; }
 }
 
@@ -145,7 +146,8 @@ async function lastPointer({pfs, dir}: Gatty): Promise<Pointer> {
   const lastFile = last(await pfs.readdir(`${dir}/${EVENTS_DIR}`));
   if (!lastFile) { return makePointer('', 0); }
   const filecontents = await pfs.readFile(`${dir}/${EVENTS_DIR}/${lastFile}`, 'utf8');
-  return makePointer(lastFile.slice(dir.length + 1), filecontents.length);
+  // Cannot replace readFile (expensive) with stat because stat's size is true bytes while we need UTF-16 chars
+  return makePointer(`${EVENTS_DIR}/${lastFile}`, filecontents.length);
 }
 
 type AddEventOptions = {
@@ -153,7 +155,7 @@ type AddEventOptions = {
   pointer: Partial<Pointer>
 };
 async function addEvent(gatty: Gatty, uid: string, payload: string,
-                        {maxchars = 1024, pointer = {}}: Partial<AddEventOptions> = {}): Promise<Pointer> {
+                        {maxchars = 900, pointer = {}}: Partial<AddEventOptions> = {}): Promise<Pointer> {
   if (!('relativeFile' in pointer && 'chars' in pointer && pointer.relativeFile)) {
     const {relativeFile, chars} = await lastPointer(gatty);
     pointer.relativeFile = relativeFile || `${EVENTS_DIR}/1`;
@@ -173,7 +175,7 @@ async function addEvent(gatty: Gatty, uid: string, payload: string,
   const lastFilename = last(relativeFile.split('/')) || '1';
   const parsed = parseInt(lastFilename, BASE);
   if (isNaN(parsed)) { throw new Error('non-numeric filename'); }
-  const newFile = (parsed + 1).toString(BASE);
+  const newFile = EVENTS_DIR + '/' + (parsed + 1).toString(BASE);
   const ret = appendFile(gatty, newFile, payload);
   appendFile(gatty, uniqueFile, `${relativeFile}-${chars.toString(BASE)}`);
   return ret;
@@ -201,26 +203,30 @@ async function uniqueToPointer(gatty: Gatty, unique: string): Promise<Pointer> {
 
 async function pointerToPointer(gatty: Gatty, start: Pointer, end: Pointer): Promise<string> {
   if (!start.relativeFile || !end.relativeFile) { return ''; }
-  const fileInts = [start, end].map(({relativeFile}) => parseInt(relativeFile.slice(EVENTS_DIR.length), BASE));
-  let contents = (await readFile(gatty, start.relativeFile)).slice(start.chars);
-  for (let i = fileInts[0] + 1; i < fileInts[1]; i++) { contents += await readFile(gatty, i.toString(BASE)); }
+  const fileInts = [start, end].map(({relativeFile}) => parseInt(relativeFile.slice(EVENTS_DIR.length + 1), BASE));
+  let contents = (await readFile(gatty, start.relativeFile));
+  for (let i = fileInts[0] + 1; i < fileInts[1]; i++) {
+    contents += await readFile(gatty, EVENTS_DIR + '/' + i.toString(BASE));
+  }
   if (start.relativeFile !== end.relativeFile) {
     contents += (await readFile(gatty, end.relativeFile)).slice(0, end.chars);
   }
+  contents = contents.slice(start.chars, end.chars);
   return contents;
 }
 
-export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[]): Promise<string[]> {
-  const {pfs, dir} = gatty;
-  try {
-    await pfs.mkdir(dir);
-  } catch {}
-  try {
-    await pfs.mkdir(`${dir}/${EVENTS_DIR}`);
-  } catch {}
-  try {
-    await pfs.mkdir(`${dir}/${UNIQUES_DIR}`);
-  } catch {}
+async function mkdirp({dir, pfs}: Gatty) {
+  for (const path of [dir, `${dir}/${EVENTS_DIR}`, `${dir}/${UNIQUES_DIR}`]) {
+    try {
+      await pfs.mkdir(path);
+    } catch {}
+  }
+}
+
+export async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[],
+                                     events: string[]): Promise<{newEvents: string[], filesTouched: Set<string>}> {
+  await mkdirp(gatty);
+  const INIT_POINTER = makePointer(`${EVENTS_DIR}/1`, 0);
 
   if (lastSharedUid && !(await fileExists(gatty, `${UNIQUES_DIR}/${lastSharedUid}`))) {
     throw new Error('lastSharedUid is in fact not shared ' + lastSharedUid);
@@ -228,14 +234,19 @@ export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], 
   // Write to store the unsync'd events
   let pointer: Pointer = await lastPointer(gatty);
   const endPointer = makePointer(pointer.relativeFile, pointer.chars);
+  const filesTouched: Set<string> = new Set();
   {
     let i = 0;
-    for (const e of events) { pointer = await addEvent(gatty, uids[i++], e, {pointer}); }
+    for (const e of events) {
+      pointer = await addEvent(gatty, uids[i++], e, {pointer});
+      filesTouched.add(pointer.relativeFile);
+    }
   }
   // get all events that others have pushed that we lack, from lastShareUid to endPointer
-  const startPointer = await uniqueToPointer(gatty, lastSharedUid);
+  const startPointer = lastSharedUid ? await uniqueToPointer(gatty, lastSharedUid) : INIT_POINTER;
   const rawContents = await pointerToPointer(gatty, startPointer, endPointer);
-  return rawContents.split('\n');
+  const newEvents = rawContents.trim().split('\n');
+  return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents, filesTouched};
 }
 
 if (module === require.main) {
@@ -253,16 +264,50 @@ if (module === require.main) {
       password: '',
       token: ''
     };
-    let events = 'hello!,hi there!,how are you?'.split(',');
+
     function slug(s: string) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, '') }
-    let uids = events.map(slug);
-    await sync(gatty, '', uids, events);
+    const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
+    const uids = events.map(slug);
+    {
+      console.log('## INITIAL WRITE ON EMPTY STORE');
+      const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids, events);
+      console.log('filesTouched', filesTouched);
+      console.log('newEvents', newEvents)
+    }
 
-    console.log('syncd')
+    {
+      console.log('## CHECKING FOR NEW REMOTES');
+      const {newEvents, filesTouched} = await writeNewEvents(gatty, last(uids) || '', uids, events);
+      console.log('filesTouched', filesTouched);
+      console.log('newEvents', newEvents)
+    }
 
-    let newEvents = 'chillin,cruisin,flying'.split(',');
-    let newUids = newEvents.map(slug);
-    await sync(gatty, uids[uids.length - 1], newUids, newEvents);
+    {
+      console.log('## APPENDING NEW EVENTS FROM BEFORE');
+      let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
+      let uids2 = events2.map(slug);
+      const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
+      console.log('filesTouched', filesTouched);
+      console.log('newEvents', newEvents)
+    }
+
+    {
+      console.log('## NEW DEVICE THAT ONLY HAS PARTIAL STORE (first commit, hello etc.)');
+      let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
+      let uids2 = events2.map(slug);
+      const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
+      console.log('filesTouched', filesTouched);
+      console.log('newEvents', newEvents)
+    }
+
+    {
+      console.log('## FRESH DEVICE, with events to commit, nothing in store');
+      let events2 = 'never,giv,up'.split(',').map(s => s + '\n');
+      let uids2 = events2.map(slug);
+      const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids2, events2);
+      console.log('filesTouched', filesTouched);
+      console.log('newEvents', newEvents)
+    }
 
     console.log('done');
   })();

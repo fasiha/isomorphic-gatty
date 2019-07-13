@@ -23,3 +23,4 @@ function test(url, username, token, corsProxy) {
     });
 }
 exports.test = test;
+//# sourceMappingURL=test.js.map
