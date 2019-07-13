@@ -161,8 +161,10 @@ async function lastPointer({pfs, dir}: Gatty): Promise<Pointer> {
   return makePointer(`${EVENTS_DIR}/${lastFile}`, filecontents.length);
 }
 
-async function addEvent(gatty: Gatty, uid: string, payload: string,
-                        pointer: Partial < Pointer >= {}): Promise<Pointer> {
+/**
+ * Returns output of `appendFile` on event, i.e., pointer to the END of the saved payload
+ */
+async function addEvent(gatty: Gatty, uid: string, payload: string, pointer: Partial<Pointer> = {}): Promise<Pointer> {
   if (!('relativeFile' in pointer && 'chars' in pointer && pointer.relativeFile)) {
     const {relativeFile, chars} = await lastPointer(gatty);
     pointer.relativeFile = relativeFile || `${EVENTS_DIR}/1`;
@@ -185,7 +187,7 @@ async function addEvent(gatty: Gatty, uid: string, payload: string,
   if (isNaN(parsed)) { throw new Error('non-numeric filename'); }
   const newFile = EVENTS_DIR + '/' + (parsed + 1).toString(BASE);
   // Unique file should contain pointer to BEGINNING of payload
-  await appendFile(gatty, uniqueFile, `${newFile}-0`);
+  await appendFile(gatty, uniqueFile, `${newFile}${POINTER_SEP}0`);
   return appendFile(gatty, newFile, payload);
 }
 

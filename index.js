@@ -149,6 +149,9 @@ function lastPointer({ pfs, dir }) {
         return makePointer(`${EVENTS_DIR}/${lastFile}`, filecontents.length);
     });
 }
+/**
+ * Returns output of `appendFile` on event, i.e., pointer to the END of the saved payload
+ */
 function addEvent(gatty, uid, payload, pointer = {}) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!('relativeFile' in pointer && 'chars' in pointer && pointer.relativeFile)) {
@@ -174,7 +177,7 @@ function addEvent(gatty, uid, payload, pointer = {}) {
         }
         const newFile = EVENTS_DIR + '/' + (parsed + 1).toString(BASE);
         // Unique file should contain pointer to BEGINNING of payload
-        yield appendFile(gatty, uniqueFile, `${newFile}-0`);
+        yield appendFile(gatty, uniqueFile, `${newFile}${POINTER_SEP}0`);
         return appendFile(gatty, newFile, payload);
     });
 }
