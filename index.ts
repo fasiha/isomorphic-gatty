@@ -158,7 +158,7 @@ type AddEventOptions = {
   pointer: Partial<Pointer>
 };
 async function addEvent(gatty: Gatty, uid: string, payload: string,
-                        {maxchars = 9, pointer = {}}: Partial<AddEventOptions> = {}): Promise<Pointer> {
+                        {maxchars = 999, pointer = {}}: Partial<AddEventOptions> = {}): Promise<Pointer> {
   if (!('relativeFile' in pointer && 'chars' in pointer && pointer.relativeFile)) {
     const {relativeFile, chars} = await lastPointer(gatty);
     pointer.relativeFile = relativeFile || `${EVENTS_DIR}/1`;
@@ -197,6 +197,11 @@ async function uniqueToPointer(gatty: Gatty, unique: string): Promise<Pointer> {
 
 async function pointerToPointer(gatty: Gatty, start: Pointer, end: Pointer): Promise<string> {
   if (!start.relativeFile || !end.relativeFile) { return ''; }
+  // if all in a single file, slurp it, slice off either edge, and return
+  if (start.relativeFile === end.relativeFile) {
+    return (await readFile(gatty, start.relativeFile)).slice(start.chars, end.chars);
+  }
+  // if *multiple* files, slurp each of them in order. The first and last should be trimmed.
   const fileInts = [start, end].map(({relativeFile}) => parseInt(relativeFile.slice(EVENTS_DIR.length + 1), BASE));
   let contents = '';
   for (let i = fileInts[0]; i <= fileInts[1]; i++) {

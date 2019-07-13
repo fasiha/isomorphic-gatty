@@ -151,7 +151,7 @@ function lastPointer({ pfs, dir }) {
         return makePointer(`${EVENTS_DIR}/${lastFile}`, filecontents.length);
     });
 }
-function addEvent(gatty, uid, payload, { maxchars = 9, pointer = {} } = {}) {
+function addEvent(gatty, uid, payload, { maxchars = 999, pointer = {} } = {}) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!('relativeFile' in pointer && 'chars' in pointer && pointer.relativeFile)) {
             const { relativeFile, chars } = yield lastPointer(gatty);
@@ -200,6 +200,11 @@ function pointerToPointer(gatty, start, end) {
         if (!start.relativeFile || !end.relativeFile) {
             return '';
         }
+        // if all in a single file, slurp it, slice off either edge, and return
+        if (start.relativeFile === end.relativeFile) {
+            return (yield readFile(gatty, start.relativeFile)).slice(start.chars, end.chars);
+        }
+        // if *multiple* files, slurp each of them in order. The first and last should be trimmed.
         const fileInts = [start, end].map(({ relativeFile }) => parseInt(relativeFile.slice(EVENTS_DIR.length + 1), BASE));
         let contents = '';
         for (let i = fileInts[0]; i <= fileInts[1]; i++) {
