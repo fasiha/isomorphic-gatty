@@ -59,6 +59,9 @@ type PushResult = {
   ok: string[],
   errors?: string[],
 };
+/**
+ * Returns NEXT pointer, i.e., pointer to the END of the appended string
+ */
 async function appendFile({pfs, dir}: Gatty, filepath: string, content: string): Promise<Pointer> {
   console.log('## going to write to ' + dir + '/' + filepath);
   let oldContents = '';
@@ -155,7 +158,7 @@ type AddEventOptions = {
   pointer: Partial<Pointer>
 };
 async function addEvent(gatty: Gatty, uid: string, payload: string,
-                        {maxchars = 900, pointer = {}}: Partial<AddEventOptions> = {}): Promise<Pointer> {
+                        {maxchars = 9, pointer = {}}: Partial<AddEventOptions> = {}): Promise<Pointer> {
   if (!('relativeFile' in pointer && 'chars' in pointer && pointer.relativeFile)) {
     const {relativeFile, chars} = await lastPointer(gatty);
     pointer.relativeFile = relativeFile || `${EVENTS_DIR}/1`;
@@ -167,32 +170,23 @@ async function addEvent(gatty: Gatty, uid: string, payload: string,
   if (await fileExists(gatty, uniqueFile)) { return makePointer(relativeFile, chars); }
 
   if (chars < maxchars) {
-    const ret = appendFile(gatty, relativeFile, payload);
-    appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
-    return ret;
+    // Unique file should contain pointer to BEGINNING of payload
+    await appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
+    return appendFile(gatty, relativeFile, payload);
   }
 
   const lastFilename = last(relativeFile.split('/')) || '1';
   const parsed = parseInt(lastFilename, BASE);
   if (isNaN(parsed)) { throw new Error('non-numeric filename'); }
   const newFile = EVENTS_DIR + '/' + (parsed + 1).toString(BASE);
-  const ret = appendFile(gatty, newFile, payload);
-  appendFile(gatty, uniqueFile, `${relativeFile}-${chars.toString(BASE)}`);
-  return ret;
+  // Unique file should contain pointer to BEGINNING of payload
+  await appendFile(gatty, uniqueFile, `${newFile}-0`);
+  return appendFile(gatty, newFile, payload);
 }
 
-async function uniqueToPayload(gatty: Gatty, unique: string): Promise<string> {
-  const pointerStr = await readFile(gatty, `${UNIQUES_DIR}/${unique}`);
-  const [file, offset] = pointerStr.split(POINTER_SEP);
-  if (!file || !offset) { throw new Error('failed to parse unique ' + unique); }
-  let contents = await readFile(gatty, `${EVENTS_DIR}/${file}`);
-  const offsetBytes = parseInt(offset, BASE);
-  contents.slice(offsetBytes)
-  const end = contents.indexOf('\n');
-  if (end < 0) { return contents; }
-  return contents.slice(0, end);
-}
-
+/**
+ * Pointer to BEGINNING of the unique ID's payload
+ */
 async function uniqueToPointer(gatty: Gatty, unique: string): Promise<Pointer> {
   if (!unique) { return makePointer('', 0) }
   const pointerStr = await readFile(gatty, `${UNIQUES_DIR}/${unique}`);
@@ -204,14 +198,17 @@ async function uniqueToPointer(gatty: Gatty, unique: string): Promise<Pointer> {
 async function pointerToPointer(gatty: Gatty, start: Pointer, end: Pointer): Promise<string> {
   if (!start.relativeFile || !end.relativeFile) { return ''; }
   const fileInts = [start, end].map(({relativeFile}) => parseInt(relativeFile.slice(EVENTS_DIR.length + 1), BASE));
-  let contents = (await readFile(gatty, start.relativeFile));
-  for (let i = fileInts[0] + 1; i < fileInts[1]; i++) {
-    contents += await readFile(gatty, EVENTS_DIR + '/' + i.toString(BASE));
+  let contents = '';
+  for (let i = fileInts[0]; i <= fileInts[1]; i++) {
+    const all = await readFile(gatty, EVENTS_DIR + '/' + i.toString(BASE));
+    if (i === fileInts[0]) {
+      contents += all.slice(start.chars)
+    } else if (i === fileInts[1]) {
+      contents += all.slice(0, end.chars);
+    } else {
+      contents += all;
+    }
   }
-  if (start.relativeFile !== end.relativeFile) {
-    contents += (await readFile(gatty, end.relativeFile)).slice(0, end.chars);
-  }
-  contents = contents.slice(start.chars, end.chars);
   return contents;
 }
 

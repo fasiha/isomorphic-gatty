@@ -54,6 +54,9 @@ function writeFileCommit({ pfs, dir }, filepath, contents, message, name = 'Me',
     });
 }
 exports.writeFileCommit = writeFileCommit;
+/**
+ * Returns NEXT pointer, i.e., pointer to the END of the appended string
+ */
 function appendFile({ pfs, dir }, filepath, content) {
     return __awaiter(this, void 0, void 0, function* () {
         console.log('## going to write to ' + dir + '/' + filepath);
@@ -148,7 +151,7 @@ function lastPointer({ pfs, dir }) {
         return makePointer(`${EVENTS_DIR}/${lastFile}`, filecontents.length);
     });
 }
-function addEvent(gatty, uid, payload, { maxchars = 900, pointer = {} } = {}) {
+function addEvent(gatty, uid, payload, { maxchars = 9, pointer = {} } = {}) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!('relativeFile' in pointer && 'chars' in pointer && pointer.relativeFile)) {
             const { relativeFile, chars } = yield lastPointer(gatty);
@@ -161,9 +164,9 @@ function addEvent(gatty, uid, payload, { maxchars = 900, pointer = {} } = {}) {
             return makePointer(relativeFile, chars);
         }
         if (chars < maxchars) {
-            const ret = appendFile(gatty, relativeFile, payload);
-            appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
-            return ret;
+            // Unique file should contain pointer to BEGINNING of payload
+            yield appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
+            return appendFile(gatty, relativeFile, payload);
         }
         const lastFilename = last(relativeFile.split('/')) || '1';
         const parsed = parseInt(lastFilename, BASE);
@@ -171,28 +174,14 @@ function addEvent(gatty, uid, payload, { maxchars = 900, pointer = {} } = {}) {
             throw new Error('non-numeric filename');
         }
         const newFile = EVENTS_DIR + '/' + (parsed + 1).toString(BASE);
-        const ret = appendFile(gatty, newFile, payload);
-        appendFile(gatty, uniqueFile, `${relativeFile}-${chars.toString(BASE)}`);
-        return ret;
+        // Unique file should contain pointer to BEGINNING of payload
+        yield appendFile(gatty, uniqueFile, `${newFile}-0`);
+        return appendFile(gatty, newFile, payload);
     });
 }
-function uniqueToPayload(gatty, unique) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const pointerStr = yield readFile(gatty, `${UNIQUES_DIR}/${unique}`);
-        const [file, offset] = pointerStr.split(POINTER_SEP);
-        if (!file || !offset) {
-            throw new Error('failed to parse unique ' + unique);
-        }
-        let contents = yield readFile(gatty, `${EVENTS_DIR}/${file}`);
-        const offsetBytes = parseInt(offset, BASE);
-        contents.slice(offsetBytes);
-        const end = contents.indexOf('\n');
-        if (end < 0) {
-            return contents;
-        }
-        return contents.slice(0, end);
-    });
-}
+/**
+ * Pointer to BEGINNING of the unique ID's payload
+ */
 function uniqueToPointer(gatty, unique) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!unique) {
@@ -212,14 +201,19 @@ function pointerToPointer(gatty, start, end) {
             return '';
         }
         const fileInts = [start, end].map(({ relativeFile }) => parseInt(relativeFile.slice(EVENTS_DIR.length + 1), BASE));
-        let contents = (yield readFile(gatty, start.relativeFile));
-        for (let i = fileInts[0] + 1; i < fileInts[1]; i++) {
-            contents += yield readFile(gatty, EVENTS_DIR + '/' + i.toString(BASE));
+        let contents = '';
+        for (let i = fileInts[0]; i <= fileInts[1]; i++) {
+            const all = yield readFile(gatty, EVENTS_DIR + '/' + i.toString(BASE));
+            if (i === fileInts[0]) {
+                contents += all.slice(start.chars);
+            }
+            else if (i === fileInts[1]) {
+                contents += all.slice(0, end.chars);
+            }
+            else {
+                contents += all;
+            }
         }
-        if (start.relativeFile !== end.relativeFile) {
-            contents += (yield readFile(gatty, end.relativeFile)).slice(0, end.chars);
-        }
-        contents = contents.slice(start.chars, end.chars);
         return contents;
     });
 }
