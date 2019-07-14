@@ -39,29 +39,12 @@ export async function setup({
   }
   const pfs = fs.promises;
 
-  await pfs.mkdir(dir);
   await git.clone({url, dir, corsProxy, ref: branch, singleBranch: true, depth, since, username, password, token});
   return {dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit};
 }
 
-export async function push({dir, username, password, token}: Gatty) {
-  let pushres = await git.push({dir, username, password, token});
-  return pushres.errors;
-}
-
-export async function ls({dir, pfs}: Gatty, filepath: string = ''): Promise<string[]> {
-  return pfs.readdir(filepath ? `${dir}/${filepath}`.replace(/\/+$/, '') : dir);
-}
-
-export async function readFile({dir, pfs}: Gatty, filepath: string): Promise<string> {
+async function readFile({dir, pfs}: Gatty, filepath: string): Promise<string> {
   return pfs.readFile(`${dir}/${filepath}`, 'utf8');
-}
-
-export async function writeFileCommit({pfs, dir}: Gatty, filepath: string, contents: string, message: string,
-                                      name: string = 'Me', email: string = 'mrtest@example.com'): Promise<string> {
-  await pfs.writeFile(`${dir}/${filepath}`, contents, 'utf8');
-  await git.add({dir, filepath});
-  return git.commit({dir, message, author: {name, email}});
 }
 
 /**
@@ -79,30 +62,6 @@ async function appendFile({pfs, dir}: Gatty, filepath: string, content: string):
   await pfs.writeFile(fullpath, oldContents + content, 'utf8');
   await git.add({dir, filepath})
   return makePointer(filepath, oldContents.length + content.length);
-}
-
-export async function atomicAppend(gatty: Gatty, filepath: string, content: string, message: string, name: string,
-                                   email: string, maxRetries = 3) {
-  const {pfs, dir, username, password, token} = gatty;
-  for (let retry = 0; retry < maxRetries; retry++) {
-    // pull remote (rewind if failed?)
-    await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
-    // write/append
-    await appendFile(gatty, filepath, content);
-    // add & commit
-    await git.add({dir, filepath});
-    await git.commit({dir, message, author: {name, email}});
-    // push
-    const pushed = await git.push({dir, username, password, token});
-    if (pushed.errors) {
-      // if push failed, roll back commit and retry, up to some maximum
-      const branch = (await git.currentBranch({dir})) || 'master';
-      await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true});
-    } else {
-      return;
-    }
-  }
-  throw new Error('failed to commit');
 }
 
 type GitResetArgs = {
@@ -289,68 +248,3 @@ export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[]
   }
   return {newSharedUid: lastSharedUid, newEvents};
 }
-
-// if (module === require.main) {
-//   let {promises} = require('fs');
-
-//   (async function() {
-//     const gatty: Gatty = {
-//       pfs: promises,
-//       dir: 'whee',
-//       corsProxy: '',
-//       branch: '',
-//       depth: -1,
-//       since: new Date(),
-//       username: '',
-//       password: '',
-//       token: '',
-//       eventFileSizeLimit: 900
-//     };
-
-//     function slug(s: string) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, '') }
-//     const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
-//     const uids = events.map(slug);
-//     {
-//       console.log('## INITIAL WRITE ON EMPTY STORE');
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids, events);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-
-//     {
-//       console.log('## CHECKING FOR NEW REMOTES');
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, last(uids) || '', uids, events);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-
-//     {
-//       console.log('## APPENDING NEW EVENTS FROM BEFORE');
-//       let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
-//       let uids2 = events2.map(slug);
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-
-//     {
-//       console.log('## NEW DEVICE THAT ONLY HAS PARTIAL STORE (first commit, hello etc.)');
-//       let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
-//       let uids2 = events2.map(slug);
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-
-//     {
-//       console.log('## FRESH DEVICE, with events to commit, nothing in store');
-//       let events2 = 'never,giv,up'.split(',').map(s => s + '\n');
-//       let uids2 = events2.map(slug);
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids2, events2);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-
-//     console.log('done');
-//   })();
-// }

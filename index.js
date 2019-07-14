@@ -19,39 +19,16 @@ function setup({ dir = DEFAULT_DIR, corsProxy = DEFAULT_PROXY, branch, depth, si
             git.plugins.set('fs', fs);
         }
         const pfs = fs.promises;
-        yield pfs.mkdir(dir);
         yield git.clone({ url, dir, corsProxy, ref: branch, singleBranch: true, depth, since, username, password, token });
         return { dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit };
     });
 }
 exports.setup = setup;
-function push({ dir, username, password, token }) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let pushres = yield git.push({ dir, username, password, token });
-        return pushres.errors;
-    });
-}
-exports.push = push;
-function ls({ dir, pfs }, filepath = '') {
-    return __awaiter(this, void 0, void 0, function* () {
-        return pfs.readdir(filepath ? `${dir}/${filepath}`.replace(/\/+$/, '') : dir);
-    });
-}
-exports.ls = ls;
 function readFile({ dir, pfs }, filepath) {
     return __awaiter(this, void 0, void 0, function* () {
         return pfs.readFile(`${dir}/${filepath}`, 'utf8');
     });
 }
-exports.readFile = readFile;
-function writeFileCommit({ pfs, dir }, filepath, contents, message, name = 'Me', email = 'mrtest@example.com') {
-    return __awaiter(this, void 0, void 0, function* () {
-        yield pfs.writeFile(`${dir}/${filepath}`, contents, 'utf8');
-        yield git.add({ dir, filepath });
-        return git.commit({ dir, message, author: { name, email } });
-    });
-}
-exports.writeFileCommit = writeFileCommit;
 /**
  * Returns NEXT pointer, i.e., pointer to the END of the appended string
  */
@@ -71,32 +48,6 @@ function appendFile({ pfs, dir }, filepath, content) {
         return makePointer(filepath, oldContents.length + content.length);
     });
 }
-function atomicAppend(gatty, filepath, content, message, name, email, maxRetries = 3) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const { pfs, dir, username, password, token } = gatty;
-        for (let retry = 0; retry < maxRetries; retry++) {
-            // pull remote (rewind if failed?)
-            yield git.pull({ dir, singleBranch: true, fastForwardOnly: true, username, password, token });
-            // write/append
-            yield appendFile(gatty, filepath, content);
-            // add & commit
-            yield git.add({ dir, filepath });
-            yield git.commit({ dir, message, author: { name, email } });
-            // push
-            const pushed = yield git.push({ dir, username, password, token });
-            if (pushed.errors) {
-                // if push failed, roll back commit and retry, up to some maximum
-                const branch = (yield git.currentBranch({ dir })) || 'master';
-                yield gitReset({ pfs, git, dir, ref: 'HEAD~1', branch, hard: true });
-            }
-            else {
-                return;
-            }
-        }
-        throw new Error('failed to commit');
-    });
-}
-exports.atomicAppend = atomicAppend;
 // Thanks to jcubic: https://github.com/isomorphic-git/isomorphic-git/issues/729#issuecomment-489523944
 function gitReset({ pfs, git, dir, ref, branch, hard = false }) {
     return __awaiter(this, void 0, void 0, function* () {
@@ -300,61 +251,4 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3) {
     });
 }
 exports.writer = writer;
-// if (module === require.main) {
-//   let {promises} = require('fs');
-//   (async function() {
-//     const gatty: Gatty = {
-//       pfs: promises,
-//       dir: 'whee',
-//       corsProxy: '',
-//       branch: '',
-//       depth: -1,
-//       since: new Date(),
-//       username: '',
-//       password: '',
-//       token: '',
-//       eventFileSizeLimit: 900
-//     };
-//     function slug(s: string) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, '') }
-//     const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
-//     const uids = events.map(slug);
-//     {
-//       console.log('## INITIAL WRITE ON EMPTY STORE');
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids, events);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-//     {
-//       console.log('## CHECKING FOR NEW REMOTES');
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, last(uids) || '', uids, events);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-//     {
-//       console.log('## APPENDING NEW EVENTS FROM BEFORE');
-//       let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
-//       let uids2 = events2.map(slug);
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-//     {
-//       console.log('## NEW DEVICE THAT ONLY HAS PARTIAL STORE (first commit, hello etc.)');
-//       let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
-//       let uids2 = events2.map(slug);
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-//     {
-//       console.log('## FRESH DEVICE, with events to commit, nothing in store');
-//       let events2 = 'never,giv,up'.split(',').map(s => s + '\n');
-//       let uids2 = events2.map(slug);
-//       const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids2, events2);
-//       console.log('filesTouched', filesTouched);
-//       console.log('newEvents', newEvents)
-//     }
-//     console.log('done');
-//   })();
-// }
 //# sourceMappingURL=index.js.map

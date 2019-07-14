@@ -1,5 +1,5 @@
 import {execSync} from 'child_process';
-import {mkdirSync, promises} from 'fs';
+import {mkdirSync, promises, readdir} from 'fs';
 import tape from 'tape';
 
 import {Gatty, writer} from './index';
@@ -83,13 +83,67 @@ tape('intro', async function intro(t) {
 
   // No new events, just checking for remotes
   {
-    const {newEvents, newSharedUid} = await writer(gatty, uids[uids.length - 1], uids, events);
+    const {newEvents, newSharedUid} = await writer(gatty, last(uids), uids, events);
     // console.log({newEvents, newSharedUid});
     t.deepEqual(newEvents, [], 'no new events from remote');
-    t.equal(newSharedUid, uids[uids.length - 1], 'idempotent even though we "added" them');
+    t.equal(newSharedUid, last(uids), 'idempotent even though we "added" them');
 
     const commits = await git.log({dir: DIR, depth: 5000});
     t.equal(commits.length, 2, 'still 2 commits');
+
+    const uniqueFiles = await promises.readdir(DIR + '/_uniques');
+    t.equal(uniqueFiles.length, events.length);
+  }
+
+  // Append new events, no new events on remote
+  {
+    let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
+    let uids2 = events2.map(slug);
+    const {newEvents, newSharedUid} = await writer(gatty, last(uids), uids2, events2);
+
+    t.deepEqual(newEvents, [], 'no new events from remote');
+    t.equal(newSharedUid, last(uids2), 'last unique present');
+
+    const commits = await git.log({dir: DIR, depth: 5000});
+    t.equal(commits.length, 3, 'now 3 commits');
+
+    const uniqueFiles = await promises.readdir(DIR + '/_uniques');
+    t.equal(uniqueFiles.length, events.length + events2.length, 'all events have uniques');
+
+    const eventsList = await catEvents(gatty);
+    t.equal(eventsList.trim().split('\n').length, events.length + events2.length, 'all events available');
+  }
+
+  // NEW device that has only partial store (the first 3 commits)
+  {
+    let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
+    let uids2 = events2.map(slug);
+    const {newEvents, newSharedUid} = await writer(gatty, last(uids), uids2, events2);
+    const commits = await git.log({dir: DIR, depth: 5000});
+    const uniqueFiles = await promises.readdir(DIR + '/_uniques');
+    const eventsList = await catEvents(gatty);
+
+    t.deepEqual(newEvents, ['chillin', 'cruisin', 'flying'], 'got correct remote events');
+    t.equal(newSharedUid, last(uids2), 'updated up to last local unique');
+    t.equal(commits.length, 4, 'now 4 commits');
+    t.equal(uniqueFiles.length, events.length + events2.length + 3, 'all 9 events have uniques')
+    t.equal(eventsList.trim().split('\n').length, 9, 'all 9 events available');
+  }
+
+  // fresh new device, with events to commit, nothing in store
+  {
+    let events2 = 'never,give,up'.split(',').map(s => s + '\n');
+    let uids2 = events2.map(slug);
+    const {newEvents, newSharedUid} = await writer(gatty, '', uids2, events2);
+    const commits = await git.log({dir: DIR, depth: 5000});
+    const uniqueFiles = await promises.readdir(DIR + '/_uniques');
+    const eventsList = await catEvents(gatty);
+
+    t.equal(newEvents.length, 9, '9 remote events retrieved');
+    t.equal(newSharedUid, last(uids2), 'updated up to last local unique');
+    t.equal(commits.length, 5, 'now 5 commits');
+    t.equal(uniqueFiles.length, events.length + events2.length + 3 + 3, 'all 12 events have uniques')
+    t.equal(eventsList.trim().split('\n').length, 12, 'all 12 events available');
   }
 
   execSync(`node_modules/.bin/git-http-mock-server stop`);
@@ -98,6 +152,17 @@ tape('intro', async function intro(t) {
   rimraf.sync(REMOTEDIR + '.git');
 
   t.end();
-})
+});
 
-function sleep(ms: number) { return new Promise(resolve => {setTimeout(resolve, ms)}); }
+async function catEvents({pfs, dir}: Gatty) {
+  const evDir = dir + '/_events';
+  const files = await promises.readdir(evDir);
+  const contents = await Promise.all(files.map(file => promises.readFile(evDir + '/' + file, 'utf8')));
+  return contents.join('');
+}
+
+// function sleep(ms: number) { return new Promise(resolve => {setTimeout(resolve, ms)}); }
+function last<T>(arr: T[]): T {
+  if ((arr.length - 1) in arr) { return arr[arr.length - 1]; }
+  throw new Error('out-of-bounds');
+}
