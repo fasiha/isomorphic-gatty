@@ -13,7 +13,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const child_process_1 = require("child_process");
 const fs_1 = require("fs");
-const globby_1 = __importDefault(require("globby"));
 const tape_1 = __importDefault(require("tape"));
 const index_1 = require("./index");
 const git = require('isomorphic-git');
@@ -61,12 +60,13 @@ tape_1.default('intro', function intro(t) {
             t.equal(eventFiles.size, 0, 'no files in event directory');
             const uniqueFiles = new Set(yield fs_1.promises.readdir(DIR + '/_uniques'));
             t.equal(uniqueFiles.size, 0, 'no files in unique directory');
-            console.log(DIR, yield globby_1.default(`${DIR}/**/*`));
+            const commits = yield git.log({ dir: DIR, depth: 5000 });
+            t.equal(commits.length, 1, 'only 1 commit, from remote');
         }
         // // Write new events to empty store
         {
             const { newEvents, newSharedUid } = yield index_1.writer(gatty, '', uids, events);
-            console.log({ newEvents, newSharedUid });
+            t.equal(newSharedUid, uids[uids.length - 1], 'shared last event');
             t.deepEqual(newEvents, [], 'no new events');
             const eventFiles = new Set(yield fs_1.promises.readdir(DIR + '/_events'));
             const uniqueFiles = new Set(yield fs_1.promises.readdir(DIR + '/_uniques'));
@@ -74,12 +74,18 @@ tape_1.default('intro', function intro(t) {
             t.ok(eventFiles.has('1'), 'expected event file found on dist');
             t.equal(uniqueFiles.size, uids.length, 'expected # of uniques on disk');
             uids.forEach(u => t.ok(uniqueFiles.has(`${u}`), 'unique file created'));
+            const commits = yield git.log({ dir: DIR, depth: 5000 });
+            t.equal(commits.length, 2, 'now 2 commits');
         }
-        // // No new events, just checking for remotes
-        // {
-        //   const {newEvents} = await writeNewEvents(gatty, uids[uids.length - 1], uids, events);
-        //   console.log({newEvents});
-        // }
+        // No new events, just checking for remotes
+        {
+            const { newEvents, newSharedUid } = yield index_1.writer(gatty, uids[uids.length - 1], uids, events);
+            // console.log({newEvents, newSharedUid});
+            t.deepEqual(newEvents, [], 'no new events from remote');
+            t.equal(newSharedUid, uids[uids.length - 1], 'idempotent even though we "added" them');
+            const commits = yield git.log({ dir: DIR, depth: 5000 });
+            t.equal(commits.length, 2, 'still 2 commits');
+        }
         child_process_1.execSync(`node_modules/.bin/git-http-mock-server stop`);
         rimraf.sync(DIR);
         rimraf.sync(REMOTEDIR);

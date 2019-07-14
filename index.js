@@ -57,7 +57,7 @@ exports.writeFileCommit = writeFileCommit;
  */
 function appendFile({ pfs, dir }, filepath, content) {
     return __awaiter(this, void 0, void 0, function* () {
-        console.log('## going to write to ' + dir + '/' + filepath);
+        // console.log('## going to write to ' + dir + '/' + filepath);
         let oldContents = '';
         const fullpath = `${dir}/${filepath}`;
         try {
@@ -267,21 +267,33 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3) {
         let newEvents = [];
         for (let retry = 0; retry < maxRetries; retry++) {
             // pull remote (rewind if failed? or re-run setup with clean slate?)
-            yield git.pull({ dir, singleBranch: true, fastForwardOnly: true, username, password, token });
+            try {
+                yield git.pull({ dir, singleBranch: true, fastForwardOnly: true, username, password, token });
+            }
+            catch (_a) {
+                continue;
+            }
             // edit and git add and get new events
             newEvents = [];
             newEvents = (yield writeNewEvents(gatty, lastSharedUid, uids, events)).newEvents;
+            const staged = yield git.listFiles({ dir });
+            const statuses = yield Promise.all(staged.map(file => git.status({ dir, filepath: file })));
+            const changes = statuses.some(s => s !== 'unmodified');
+            if (!changes) {
+                return { newSharedUid: last(uids) || lastSharedUid, newEvents };
+            }
             // commit
             yield git.commit({ dir, message, author: { name, email } });
             // push
             const pushed = yield git.push({ dir, username, password, token });
             if (pushed.errors && pushed.errors.length) {
+                console.error('git push errors found', pushed);
                 // if push failed, roll back commit and retry, up to some maximum
                 const branch = (yield git.currentBranch({ dir })) || 'master';
                 yield gitReset({ pfs, git, dir, ref: 'HEAD~1', branch, hard: true });
             }
             else {
-                return { newSharedUid: last(uids) || '', newEvents };
+                return { newSharedUid: last(uids) || lastSharedUid, newEvents };
             }
         }
         return { newSharedUid: lastSharedUid, newEvents };

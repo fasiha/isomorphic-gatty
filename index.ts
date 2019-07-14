@@ -68,7 +68,7 @@ export async function writeFileCommit({pfs, dir}: Gatty, filepath: string, conte
  * Returns NEXT pointer, i.e., pointer to the END of the appended string
  */
 async function appendFile({pfs, dir}: Gatty, filepath: string, content: string): Promise<Pointer> {
-  console.log('## going to write to ' + dir + '/' + filepath);
+  // console.log('## going to write to ' + dir + '/' + filepath);
   let oldContents = '';
   const fullpath = `${dir}/${filepath}`;
   try {
@@ -261,20 +261,30 @@ export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[]
   let newEvents: string[] = [];
   for (let retry = 0; retry < maxRetries; retry++) {
     // pull remote (rewind if failed? or re-run setup with clean slate?)
-    await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
+    try {
+      await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
+    } catch { continue; }
     // edit and git add and get new events
     newEvents = [];
     newEvents = (await writeNewEvents(gatty, lastSharedUid, uids, events)).newEvents;
+
+    const staged = await git.listFiles({dir});
+    const statuses = await Promise.all(staged.map(file => git.status({dir, filepath: file})));
+    const changes = statuses.some(s => s !== 'unmodified');
+
+    if (!changes) { return {newSharedUid: last(uids) || lastSharedUid, newEvents}; }
+
     // commit
     await git.commit({dir, message, author: {name, email}});
     // push
     const pushed = await git.push({dir, username, password, token});
     if (pushed.errors && pushed.errors.length) {
+      console.error('git push errors found', pushed);
       // if push failed, roll back commit and retry, up to some maximum
       const branch = await git.currentBranch({dir}) || 'master';
       await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true});
     } else {
-      return {newSharedUid: last(uids) || '', newEvents};
+      return {newSharedUid: last(uids) || lastSharedUid, newEvents};
     }
   }
   return {newSharedUid: lastSharedUid, newEvents};
