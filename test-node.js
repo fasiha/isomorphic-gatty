@@ -22,27 +22,52 @@ function slug(s) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, ''); }
 const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
 const uids = events.map(slug);
 const DIR = 'whee';
-tape_1.default('intro', (t) => __awaiter(this, void 0, void 0, function* () {
-    // delete old git dir
-    rimraf.sync(DIR);
-    const gatty = {
-        pfs: fs_1.promises,
-        dir: DIR,
-        corsProxy: '',
-        branch: '',
-        depth: -1,
-        since: new Date(),
-        username: '',
-        password: '',
-        token: '',
-        eventFileSizeLimit: 900
-    };
-    const { newEvents, filesTouched } = yield index_1.writeNewEvents(gatty, '', uids, events);
-    t.deepEqual(newEvents, []);
-    t.deepEqual(Array.from(filesTouched).sort(), ['_events/1']);
-    t.deepEqual(yield fs_1.promises.readdir(`${DIR}/_events/`), ['1']);
-    t.deepEqual((yield fs_1.promises.readdir(`${DIR}/_uniques/`)).sort(), ['hello', 'hi-there', 'how-are-you'].sort());
-    rimraf.sync(DIR);
-    t.end();
-}));
+tape_1.default('intro', function intro(t) {
+    return __awaiter(this, void 0, void 0, function* () {
+        // delete old git dir
+        rimraf.sync(DIR);
+        const gatty = {
+            pfs: fs_1.promises,
+            dir: DIR,
+            corsProxy: '',
+            branch: '',
+            depth: -1,
+            since: new Date(),
+            username: '',
+            password: '',
+            token: '',
+            eventFileSizeLimit: 900
+        };
+        // nothing to write, empty store
+        {
+            const { newEvents, filesTouched } = yield index_1.writeNewEvents(gatty, '', [], []);
+            t.deepEqual(newEvents, [], 'empty store: no new events');
+            t.deepEqual(Array.from(filesTouched), [], 'no events saved: no files touched');
+            const eventFiles = new Set(yield fs_1.promises.readdir(DIR + '/_events'));
+            t.equal(eventFiles.size, 0, 'no files in event directory');
+            const uniqueFiles = new Set(yield fs_1.promises.readdir(DIR + '/_uniques'));
+            t.equal(uniqueFiles.size, 0, 'no files in unique directory');
+        }
+        // Write new events to empty store
+        {
+            const { newEvents, filesTouched } = yield index_1.writeNewEvents(gatty, '', uids, events);
+            t.deepEqual(newEvents, [], 'no new events');
+            t.ok(filesTouched.has('_events/1'), 'first event file initialized');
+            uids.forEach(u => t.ok(filesTouched.has(`_uniques/${u}`), 'unique file created'));
+            const eventFiles = new Set(yield fs_1.promises.readdir(DIR + '/_events'));
+            const uniqueFiles = new Set(yield fs_1.promises.readdir(DIR + '/_uniques'));
+            t.equal(eventFiles.size, 1, 'only one event file on disk');
+            t.ok(eventFiles.has('1'), 'expected event file found on dist');
+            t.equal(uniqueFiles.size, uids.length, 'expected # of uniques on disk');
+            uids.forEach(u => t.ok(uniqueFiles.has(`${u}`), 'unique file created'));
+        }
+        // No new events, just checking for remotes
+        {
+            const { newEvents, filesTouched } = yield index_1.writeNewEvents(gatty, uids[uids.length - 1], uids, events);
+            console.log({ newEvents, filesTouched });
+        }
+        rimraf.sync(DIR);
+        t.end();
+    });
+});
 //# sourceMappingURL=test-node.js.map

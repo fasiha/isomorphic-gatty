@@ -243,7 +243,8 @@ export async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: 
   // Write to store the unsync'd events
   let pointer: Pointer = await lastPointer(gatty);
   const endPointer = makePointer(pointer.relativeFile, pointer.chars);
-  const filesTouched: Set<string> = new Set();
+  const filesTouched: Set<string> = new Set(uids.map(u => `${UNIQUES_DIR}/${u}`));
+  // duplicates might not need commiting but include them above pre-emptively
   {
     let i = 0;
     for (const e of events) {

@@ -244,7 +244,8 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
         // Write to store the unsync'd events
         let pointer = yield lastPointer(gatty);
         const endPointer = makePointer(pointer.relativeFile, pointer.chars);
-        const filesTouched = new Set();
+        const filesTouched = new Set(uids.map(u => `${UNIQUES_DIR}/${u}`));
+        // duplicates might not need commiting but include them above pre-emptively
         {
             let i = 0;
             for (const e of events) {
