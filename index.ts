@@ -1,10 +1,11 @@
 const LightningFS = require('@isomorphic-git/lightning-fs');
-const git = require('isomorphic-git');
+import {default as gitts} from 'isomorphic-git';
+const git: typeof gitts = require('isomorphic-git');
 
 const DEFAULT_DIR = '/gitdir';
 const DEFAULT_PROXY = 'https://cors.isomorphic-git.org';
 
-import {Stats, promises} from 'fs';
+import {promises} from 'fs';
 type PFS = typeof promises;
 
 export type Gatty = {
@@ -63,10 +64,6 @@ export async function writeFileCommit({pfs, dir}: Gatty, filepath: string, conte
   return git.commit({dir, message, author: {name, email}});
 }
 
-type PushResult = {
-  ok: string[],
-  errors?: string[],
-};
 /**
  * Returns NEXT pointer, i.e., pointer to the END of the appended string
  */
@@ -80,6 +77,7 @@ async function appendFile({pfs, dir}: Gatty, filepath: string, content: string):
     // `readFile` will throw if file not found. Moving along.
   }
   await pfs.writeFile(fullpath, oldContents + content, 'utf8');
+  await git.add({dir, filepath})
   return makePointer(filepath, oldContents.length + content.length);
 }
 
@@ -95,10 +93,10 @@ export async function atomicAppend(gatty: Gatty, filepath: string, content: stri
     await git.add({dir, filepath});
     await git.commit({dir, message, author: {name, email}});
     // push
-    const pushed: PushResult = await git.push({dir, username, password, token});
+    const pushed = await git.push({dir, username, password, token});
     if (pushed.errors) {
       // if push failed, roll back commit and retry, up to some maximum
-      const branch = await git.currentBranch({dir});
+      const branch = (await git.currentBranch({dir})) || 'master';
       await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true});
     } else {
       return;
@@ -232,8 +230,8 @@ async function mkdirp({dir, pfs}: Gatty) {
   }
 }
 
-export async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[],
-                                     events: string[]): Promise<{newEvents: string[], filesTouched: Set<string>}> {
+async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[],
+                              events: string[]): Promise<{newEvents: string[]}> {
   await mkdirp(gatty);
   const INIT_POINTER = makePointer(`${EVENTS_DIR}/1`, 0);
 
@@ -243,83 +241,106 @@ export async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: 
   // Write to store the unsync'd events
   let pointer: Pointer = await lastPointer(gatty);
   const endPointer = makePointer(pointer.relativeFile, pointer.chars);
-  const filesTouched: Set<string> = new Set(uids.map(u => `${UNIQUES_DIR}/${u}`));
-  // duplicates might not need commiting but include them above pre-emptively
   {
     let i = 0;
-    for (const e of events) {
-      pointer = await addEvent(gatty, uids[i++], e, pointer);
-      filesTouched.add(pointer.relativeFile);
-    }
+    for (const e of events) { pointer = await addEvent(gatty, uids[i++], e, pointer); }
   }
   // get all events that others have pushed that we lack, from lastShareUid to endPointer
   const startPointer = lastSharedUid ? await uniqueToPointer(gatty, lastSharedUid) : INIT_POINTER;
   const rawContents = await pointerToPointer(gatty, startPointer, endPointer);
   const newEvents = rawContents ? rawContents.trim().split('\n') : [];
-  return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents, filesTouched};
+  return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents};
 }
 
-if (module === require.main) {
-  let {promises} = require('fs');
-
-  (async function() {
-    const gatty: Gatty = {
-      pfs: promises,
-      dir: 'whee',
-      corsProxy: '',
-      branch: '',
-      depth: -1,
-      since: new Date(),
-      username: '',
-      password: '',
-      token: '',
-      eventFileSizeLimit: 900
-    };
-
-    function slug(s: string) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, '') }
-    const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
-    const uids = events.map(slug);
-    {
-      console.log('## INITIAL WRITE ON EMPTY STORE');
-      const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids, events);
-      console.log('filesTouched', filesTouched);
-      console.log('newEvents', newEvents)
+export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[],
+                             maxRetries = 3): Promise<{newSharedUid: string, newEvents: string[]}> {
+  const {pfs, dir, username, password, token} = gatty;
+  const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
+  const name = 'Gatty';
+  const email = 'gatty@localhost';
+  let newEvents: string[] = [];
+  for (let retry = 0; retry < maxRetries; retry++) {
+    // pull remote (rewind if failed? or re-run setup with clean slate?)
+    await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
+    // edit and git add and get new events
+    newEvents = [];
+    newEvents = (await writeNewEvents(gatty, lastSharedUid, uids, events)).newEvents;
+    // commit
+    await git.commit({dir, message, author: {name, email}});
+    // push
+    const pushed = await git.push({dir, username, password, token});
+    if (pushed.errors && pushed.errors.length) {
+      // if push failed, roll back commit and retry, up to some maximum
+      const branch = await git.currentBranch({dir}) || 'master';
+      await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true});
+    } else {
+      return {newSharedUid: last(uids) || '', newEvents};
     }
-
-    {
-      console.log('## CHECKING FOR NEW REMOTES');
-      const {newEvents, filesTouched} = await writeNewEvents(gatty, last(uids) || '', uids, events);
-      console.log('filesTouched', filesTouched);
-      console.log('newEvents', newEvents)
-    }
-
-    {
-      console.log('## APPENDING NEW EVENTS FROM BEFORE');
-      let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
-      let uids2 = events2.map(slug);
-      const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
-      console.log('filesTouched', filesTouched);
-      console.log('newEvents', newEvents)
-    }
-
-    {
-      console.log('## NEW DEVICE THAT ONLY HAS PARTIAL STORE (first commit, hello etc.)');
-      let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
-      let uids2 = events2.map(slug);
-      const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
-      console.log('filesTouched', filesTouched);
-      console.log('newEvents', newEvents)
-    }
-
-    {
-      console.log('## FRESH DEVICE, with events to commit, nothing in store');
-      let events2 = 'never,giv,up'.split(',').map(s => s + '\n');
-      let uids2 = events2.map(slug);
-      const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids2, events2);
-      console.log('filesTouched', filesTouched);
-      console.log('newEvents', newEvents)
-    }
-
-    console.log('done');
-  })();
+  }
+  return {newSharedUid: lastSharedUid, newEvents};
 }
+
+// if (module === require.main) {
+//   let {promises} = require('fs');
+
+//   (async function() {
+//     const gatty: Gatty = {
+//       pfs: promises,
+//       dir: 'whee',
+//       corsProxy: '',
+//       branch: '',
+//       depth: -1,
+//       since: new Date(),
+//       username: '',
+//       password: '',
+//       token: '',
+//       eventFileSizeLimit: 900
+//     };
+
+//     function slug(s: string) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, '') }
+//     const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
+//     const uids = events.map(slug);
+//     {
+//       console.log('## INITIAL WRITE ON EMPTY STORE');
+//       const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids, events);
+//       console.log('filesTouched', filesTouched);
+//       console.log('newEvents', newEvents)
+//     }
+
+//     {
+//       console.log('## CHECKING FOR NEW REMOTES');
+//       const {newEvents, filesTouched} = await writeNewEvents(gatty, last(uids) || '', uids, events);
+//       console.log('filesTouched', filesTouched);
+//       console.log('newEvents', newEvents)
+//     }
+
+//     {
+//       console.log('## APPENDING NEW EVENTS FROM BEFORE');
+//       let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
+//       let uids2 = events2.map(slug);
+//       const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
+//       console.log('filesTouched', filesTouched);
+//       console.log('newEvents', newEvents)
+//     }
+
+//     {
+//       console.log('## NEW DEVICE THAT ONLY HAS PARTIAL STORE (first commit, hello etc.)');
+//       let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
+//       let uids2 = events2.map(slug);
+//       const {newEvents, filesTouched} = await writeNewEvents(gatty, uids[uids.length - 1], uids2, events2);
+//       console.log('filesTouched', filesTouched);
+//       console.log('newEvents', newEvents)
+//     }
+
+//     {
+//       console.log('## FRESH DEVICE, with events to commit, nothing in store');
+//       let events2 = 'never,giv,up'.split(',').map(s => s + '\n');
+//       let uids2 = events2.map(slug);
+//       const {newEvents, filesTouched} = await writeNewEvents(gatty, '', uids2, events2);
+//       console.log('filesTouched', filesTouched);
+//       console.log('newEvents', newEvents)
+//     }
+
+//     console.log('done');
+//   })();
+// }
