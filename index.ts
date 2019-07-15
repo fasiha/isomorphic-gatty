@@ -3,7 +3,6 @@ import {default as gitts} from 'isomorphic-git';
 const git: typeof gitts = require('isomorphic-git');
 
 const DEFAULT_DIR = '/gitdir';
-const DEFAULT_PROXY = 'https://cors.isomorphic-git.org';
 
 import {promises} from 'fs';
 type PFS = typeof promises;
@@ -11,28 +10,19 @@ type PFS = typeof promises;
 export type Gatty = {
   pfs: PFS,
   dir: string,
-  corsProxy: string,
-  branch: string|undefined,
-  depth: number|undefined,
-  since: Date|undefined,
-  username: string|undefined,
-  password: string|undefined,
-  token: string|undefined,
-  eventFileSizeLimit: number,
+  corsProxy?: string,
+  branch?: string,
+  depth?: number,
+  since?: Date,
+  username?: string,
+  password?: string,
+  token?: string, eventFileSizeLimit: number,
 };
 
-export async function setup({
-  dir = DEFAULT_DIR,
-  corsProxy = DEFAULT_PROXY,
-  branch,
-  depth,
-  since,
-  username,
-  password,
-  token,
-  eventFileSizeLimit = 900
-}: Partial<Gatty> = {},
-                            url: string, fs?: any): Promise<Gatty> {
+export async function setup(
+    {dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, password, token, eventFileSizeLimit = 900}:
+        Partial<Gatty> = {},
+    url: string, fs?: any): Promise<Gatty> {
   if (!fs) {
     const fs = new LightningFS('fs', {wipe: true});
     git.plugins.set('fs', fs);
@@ -64,7 +54,7 @@ async function appendFile({pfs, dir}: Gatty, filepath: string, content: string):
   return makePointer(filepath, oldContents.length + content.length);
 }
 
-export type GitResetArgs = {
+type GitResetArgs = {
   pfs: PFS,
   git: typeof git,
   dir: string,

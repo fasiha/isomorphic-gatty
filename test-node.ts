@@ -1,9 +1,8 @@
 import {execSync} from 'child_process';
 import {mkdirSync, promises} from 'fs';
-import globby from 'globby';
 import tape from 'tape';
 
-import {Gatty, gitReset, writer} from './index';
+import {Gatty, gitReset, setup, writer} from './index';
 
 const git = require('isomorphic-git');
 const fs = require('fs');
@@ -23,19 +22,6 @@ const DIR2 = DIR + '2';
 
 async function multiLimit(t: tape.Test, eventFileSizeLimit = 900) {
   directoryCleanup();
-
-  const gatty: Gatty = {
-    pfs: promises,
-    dir: DIR,
-    corsProxy: '',
-    branch: '',
-    depth: -1,
-    since: new Date(),
-    username: '',
-    password: '',
-    token: '',
-    eventFileSizeLimit
-  };
 
   // Initialize remote repo
   mkdirSync(REMOTEDIR);
@@ -59,8 +45,10 @@ async function multiLimit(t: tape.Test, eventFileSizeLimit = 900) {
   // execSync(`node_modules/.bin/git-http-mock-server start`);
   // This is the server URL
   const REMOTEURL = `http://localhost:8174/${REMOTEDIR}.git`;
+
   // clone a device
-  await git.clone({dir: gatty.dir, url: REMOTEURL});
+  const init: Partial<Gatty> = {pfs: promises, dir: DIR, eventFileSizeLimit};
+  const gatty = await setup(init, REMOTEURL, fs);
 
   // nothing to write, empty store
   {

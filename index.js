@@ -11,8 +11,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const LightningFS = require('@isomorphic-git/lightning-fs');
 const git = require('isomorphic-git');
 const DEFAULT_DIR = '/gitdir';
-const DEFAULT_PROXY = 'https://cors.isomorphic-git.org';
-function setup({ dir = DEFAULT_DIR, corsProxy = DEFAULT_PROXY, branch, depth, since, username, password, token, eventFileSizeLimit = 900 } = {}, url, fs) {
+function setup({ dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, password, token, eventFileSizeLimit = 900 } = {}, url, fs) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!fs) {
             const fs = new LightningFS('fs', { wipe: true });

@@ -30,18 +30,6 @@ const DIR2 = DIR + '2';
 function multiLimit(t, eventFileSizeLimit = 900) {
     return __awaiter(this, void 0, void 0, function* () {
         directoryCleanup();
-        const gatty = {
-            pfs: fs_1.promises,
-            dir: DIR,
-            corsProxy: '',
-            branch: '',
-            depth: -1,
-            since: new Date(),
-            username: '',
-            password: '',
-            token: '',
-            eventFileSizeLimit
-        };
         // Initialize remote repo
         fs_1.mkdirSync(REMOTEDIR);
         git.init({ dir: REMOTEDIR });
@@ -62,7 +50,8 @@ function multiLimit(t, eventFileSizeLimit = 900) {
         // This is the server URL
         const REMOTEURL = `http://localhost:8174/${REMOTEDIR}.git`;
         // clone a device
-        yield git.clone({ dir: gatty.dir, url: REMOTEURL });
+        const init = { pfs: fs_1.promises, dir: DIR, eventFileSizeLimit };
+        const gatty = yield index_1.setup(init, REMOTEURL, fs);
         // nothing to write, empty store
         {
             const { newEvents, newSharedUid } = yield index_1.writer(gatty, '', [], []);
