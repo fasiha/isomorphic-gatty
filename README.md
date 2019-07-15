@@ -3,7 +3,7 @@
 I put the following in a big kettle, simmered for a few months, and published the resulting package:
 - [isomorphic-git](https://isomorphic-git.org)
 - append-only event logs
-- Ink and Switch's essay [“Local-first software”](https://www.inkandswitch.com/local-first.html)
+- Ink and Switch’s essay [“Local-first software”](https://www.inkandswitch.com/local-first.html)
 - BYOS (bring your own storage)
 - browser and Node.js
 
@@ -44,7 +44,7 @@ N.B. Gatty currently doesn’t handle offline detection. Your app should make an
 
 ### **`setup`**
 ```ts
-const gatty: Gatty = await setup({corsProxy, branch, depth, since, username, password, token}: Partial<Gatty>, url: string);
+setup({corsProxy, branch, depth, since, username, password, token}: Partial<Gatty>, url: string): Promise<Gatty>
 ```
 where the second argument
 - `url: string`, the URL to clone from
@@ -58,7 +58,7 @@ is **required** while all the arguments of the first object are **optional** and
 - `password: string`, plaintext password for authentication (don’t use this, figure out how to use a token),
 - `token: string`, a token with hopefully restricted scope for authentication.
 
-The returned value `gatty` is a promisified object of type `Gatty`, which includes these options and a couple of other internal things.
+The returned value is a promisified object of type `Gatty`, which includes these options and a couple of other internal things.
 
 ### **`sync`**
 ```ts
@@ -66,11 +66,11 @@ sync(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[]): Pro
 ```
 Given a 
 - `gatty` object returned by `setup`,
-- `lastSharedUid`, a string representing the event unique identifier that Gatty told you it’s synchronized,
+- `lastSharedUid`, a string representing the event unique identifier that Gatty told you it’s synchronized (use `''`, the empty string, if you’ve never synchronized),
 - `uids`, an array of unique identifiers (plain strings),
 - `events`, an array of events (plain strings),
 
-Gatty will pull the latest version of the repo from the URL you gave it during `setup`, add the new events you just gave it, and find and returns the events that you haven’t seen (`newEvents`). It also returns `newSharedUid`, the unique identifier of the last synchronized event that you have to keep track of for future calls to `sync`.
+Gatty will pull the latest version of the repo from the URL you gave it during `setup`, add the new events you just gave it, and find and returns the (promisified) events that you haven’t seen (`newEvents`). It also returns `newSharedUid`, the unique identifier of the last synchronized event that you have to keep track of for future calls to `sync`.
 
 ## Dev
 Tape and node-git-server for testing.
