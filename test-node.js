@@ -54,7 +54,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
         const gatty = yield index_1.setup(init, REMOTEURL, fs);
         // nothing to write, empty store
         {
-            const { newEvents, newSharedUid } = yield index_1.writer(gatty, '', [], []);
+            const { newEvents, newSharedUid } = yield index_1.sync(gatty, '', [], []);
             t.equal(newSharedUid, '');
             t.deepEqual(newEvents, [], 'empty store: no new events');
             const eventFiles = new Set(yield fs_1.promises.readdir(DIR + '/_events'));
@@ -66,7 +66,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
         }
         // // Write new events to empty store
         {
-            const { newEvents, newSharedUid } = yield index_1.writer(gatty, '', uids, events);
+            const { newEvents, newSharedUid } = yield index_1.sync(gatty, '', uids, events);
             t.equal(newSharedUid, uids[uids.length - 1], 'shared last event');
             t.deepEqual(newEvents, [], 'no new events');
             const eventFiles = new Set(yield fs_1.promises.readdir(DIR + '/_events'));
@@ -85,7 +85,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
         }
         // No new events, just checking for remotes
         {
-            const { newEvents, newSharedUid } = yield index_1.writer(gatty, last(uids), uids, events);
+            const { newEvents, newSharedUid } = yield index_1.sync(gatty, last(uids), uids, events);
             // console.log({newEvents, newSharedUid});
             t.deepEqual(newEvents, [], 'no new events from remote');
             t.equal(newSharedUid, last(uids), 'idempotent even though we "added" them');
@@ -98,7 +98,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
         {
             let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
             let uids2 = events2.map(slug);
-            const { newEvents, newSharedUid } = yield index_1.writer(gatty, last(uids), uids2, events2);
+            const { newEvents, newSharedUid } = yield index_1.sync(gatty, last(uids), uids2, events2);
             const commits = yield git.log({ dir: DIR, depth: 5000 });
             const uniqueFiles = yield fs_1.promises.readdir(DIR + '/_uniques');
             const eventsList = yield catEvents(gatty);
@@ -113,7 +113,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
             const gatty2 = yield cloneAndRollback(gatty, REMOTEURL, 1);
             let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
             let uids2 = events2.map(slug);
-            const { newEvents, newSharedUid } = yield index_1.writer(gatty2, last(uids), uids2, events2);
+            const { newEvents, newSharedUid } = yield index_1.sync(gatty2, last(uids), uids2, events2);
             const commits = yield git.log({ dir: DIR2, depth: 5000 });
             const uniqueFiles = yield fs_1.promises.readdir(DIR2 + '/_uniques');
             const eventsList = yield catEvents(gatty2);
@@ -129,7 +129,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
             const gatty2 = yield cloneAndRollback(gatty, REMOTEURL, 3);
             let events2 = 'never,give,up'.split(',').map(s => s + '\n');
             let uids2 = events2.map(slug);
-            const { newEvents, newSharedUid } = yield index_1.writer(gatty2, '', uids2, events2);
+            const { newEvents, newSharedUid } = yield index_1.sync(gatty2, '', uids2, events2);
             const eventsSet = new Set(newEvents);
             const commits = yield git.log({ dir: DIR2, depth: 5000 });
             const uniqueFiles = yield fs_1.promises.readdir(DIR2 + '/_uniques');
@@ -157,7 +157,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
             let uids2 = events2.map(slug);
             let events3 = 'iwas,second,doh'.split(',').map(s => s + '\n');
             let uids3 = events3.map(slug);
-            const { newEvents: newEvents2, newSharedUid: newSharedUid2 } = yield index_1.writer(gatty2, 'up', uids2, events2);
+            const { newEvents: newEvents2, newSharedUid: newSharedUid2 } = yield index_1.sync(gatty2, 'up', uids2, events2);
             // For device 3, skip the initial pull. This simulates the condition where device2 and device3 both pull+push at the
             // same time but the remote store gets device2's first, so device3's push will fail. This is a hyperfine edge case.
             const backup = git.pull;
@@ -167,7 +167,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
                 pullSkipCount++;
                 git.pull = backup;
             };
-            const { newEvents: newEvents3, newSharedUid: newSharedUid3 } = yield index_1.writer(gatty3, 'up', uids3, events3);
+            const { newEvents: newEvents3, newSharedUid: newSharedUid3 } = yield index_1.sync(gatty3, 'up', uids3, events3);
             const commits = yield git.log({ dir: DIR3, depth: 5000 });
             const uniqueFiles = yield fs_1.promises.readdir(DIR3 + '/_uniques');
             const eventsList = yield catEvents(gatty3);

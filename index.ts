@@ -10,13 +10,14 @@ type PFS = typeof promises;
 export type Gatty = {
   pfs: PFS,
   dir: string,
+  eventFileSizeLimit: number,
   corsProxy?: string,
   branch?: string,
   depth?: number,
   since?: Date,
   username?: string,
   password?: string,
-  token?: string, eventFileSizeLimit: number,
+  token?: string,
 };
 
 export async function setup(
@@ -216,8 +217,8 @@ async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[
   return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents};
 }
 
-export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[],
-                             maxRetries = 3): Promise<{newSharedUid: string, newEvents: string[]}> {
+export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[],
+                           maxRetries = 3): Promise<{newSharedUid: string, newEvents: string[]}> {
   const {pfs, dir, username, password, token} = gatty;
   const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
   const name = 'Gatty';

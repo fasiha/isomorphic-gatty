@@ -222,7 +222,7 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
         return { newEvents: lastSharedUid ? newEvents.slice(1) : newEvents };
     });
 }
-function writer(gatty, lastSharedUid, uids, events, maxRetries = 3) {
+function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
     return __awaiter(this, void 0, void 0, function* () {
         const { pfs, dir, username, password, token } = gatty;
         const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
@@ -262,5 +262,5 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3) {
         return { newSharedUid: lastSharedUid, newEvents };
     });
 }
-exports.writer = writer;
+exports.sync = sync;
 //# sourceMappingURL=index.js.map

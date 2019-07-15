@@ -1,16 +1,24 @@
 {
   "name": "isomorphic-gatty",
   "version": "1.0.0",
-  "description": "",
+  "description": "An append-only event log for multi-device local-first apps, built on isomorphic-git",
   "main": "index.js",
   "scripts": {
     "test": "tape test-*js",
     "build": "tsc -p .",
-    "dist": "browserify test.js -o test.bundle.js -s test",
-    "min": "google-closure-compiler --js=test.bundle.js --js_output_file=test.bundle.min.js --language_out ECMASCRIPT_2015"
+    "dist": "browserify index.js -o index.bundle.js -s gatty",
+    "min": "google-closure-compiler --js=index.bundle.js --js_output_file=index.bundle.min.js --language_out ECMASCRIPT_2015"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "isomorphic",
+    "git",
+    "append",
+    "log",
+    "event",
+    "byos",
+    "local"
+  ],
+  "author": "Ahmed Fasih",
   "license": "Unlicense",
   "devDependencies": {
     "@types/node": "^12.6.2",
