@@ -21,13 +21,8 @@ const REMOTEDIR2 = 'github2';
 const DIR = 'whee';
 const DIR2 = DIR + '2';
 
-tape('intro', async function intro(t) {
-  // delete old git dirs
-  rimraf.sync(DIR);
-  rimraf.sync(DIR2);
-  rimraf.sync(REMOTEDIR);
-  rimraf.sync(REMOTEDIR2);
-  rimraf.sync(REMOTEDIR + '.git');
+async function multiLimit(t: tape.Test, eventFileSizeLimit = 900) {
+  directoryCleanup();
 
   const gatty: Gatty = {
     pfs: promises,
@@ -39,7 +34,7 @@ tape('intro', async function intro(t) {
     username: '',
     password: '',
     token: '',
-    eventFileSizeLimit: 900
+    eventFileSizeLimit
   };
 
   // Initialize remote repo
@@ -90,7 +85,11 @@ tape('intro', async function intro(t) {
     const eventFiles = new Set(await promises.readdir(DIR + '/_events'));
     const uniqueFiles = new Set(await promises.readdir(DIR + '/_uniques'));
 
-    t.equal(eventFiles.size, 1, 'only one event file on disk');
+    if (eventFileSizeLimit > 500) {
+      t.equal(eventFiles.size, 1, 'only one event file on disk');
+    } else {
+      t.ok(eventFiles.size > 1, 'more than one event file');
+    }
     t.ok(eventFiles.has('1'), 'expected event file found on dist');
     t.equal(uniqueFiles.size, uids.length, 'expected # of uniques on disk');
     uids.forEach(u => t.ok(uniqueFiles.has(`${u}`), 'unique file created'));
@@ -156,6 +155,7 @@ tape('intro', async function intro(t) {
     let events2 = 'never,give,up'.split(',').map(s => s + '\n');
     let uids2 = events2.map(slug);
     const {newEvents, newSharedUid} = await writer(gatty2, '', uids2, events2);
+    const eventsSet = new Set(newEvents);
     const commits = await git.log({dir: DIR2, depth: 5000});
     const uniqueFiles = await promises.readdir(DIR2 + '/_uniques');
     const eventsList = await catEvents(gatty2);
@@ -165,6 +165,9 @@ tape('intro', async function intro(t) {
     t.equal(commits.length, 5, 'now 5 commits');
     t.equal(uniqueFiles.length, events.length + events2.length + 3 + 3, 'all 12 events have uniques')
     t.equal(eventsList.trim().split('\n').length, 12, 'all 12 events available');
+    for (const e of 'ichi,ni,san,chillin,cruisin,flying,hello!,hi there!,how are you?'.split(',')) {
+      t.ok(eventsSet.has(e), e + ' present');
+    }
 
     rimraf.sync(DIR2);
   }
@@ -220,12 +223,16 @@ tape('intro', async function intro(t) {
   }
 
   SERVER.close();
-  rimraf.sync(DIR);
-  rimraf.sync(DIR2);
-  rimraf.sync(REMOTEDIR);
-  rimraf.sync(REMOTEDIR2);
-  rimraf.sync(REMOTEDIR + '.git');
+  directoryCleanup();
+}
 
+tape('intro', async function(t) {
+  await multiLimit(t, 900);
+  t.end();
+});
+
+tape('small size', async function(t) {
+  await multiLimit(t, 4);
   t.end();
 });
 
@@ -247,4 +254,12 @@ async function cloneAndRollback(init: Gatty, url: string, roll: number): Promise
   await git.clone({dir: DIR2, url});
   await gitReset({pfs: gatty2.pfs, git, dir: DIR2, ref: "HEAD~" + roll, branch: 'master', hard: true, cached: false});
   return gatty2;
+}
+
+function directoryCleanup() {
+  rimraf.sync(DIR);
+  rimraf.sync(DIR2);
+  rimraf.sync(REMOTEDIR);
+  rimraf.sync(REMOTEDIR2);
+  rimraf.sync(REMOTEDIR + '.git');
 }

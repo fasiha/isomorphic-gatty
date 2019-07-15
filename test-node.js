@@ -27,14 +27,9 @@ const REMOTEDIR = 'github';
 const REMOTEDIR2 = 'github2';
 const DIR = 'whee';
 const DIR2 = DIR + '2';
-tape_1.default('intro', function intro(t) {
+function multiLimit(t, eventFileSizeLimit = 900) {
     return __awaiter(this, void 0, void 0, function* () {
-        // delete old git dirs
-        rimraf.sync(DIR);
-        rimraf.sync(DIR2);
-        rimraf.sync(REMOTEDIR);
-        rimraf.sync(REMOTEDIR2);
-        rimraf.sync(REMOTEDIR + '.git');
+        directoryCleanup();
         const gatty = {
             pfs: fs_1.promises,
             dir: DIR,
@@ -45,7 +40,7 @@ tape_1.default('intro', function intro(t) {
             username: '',
             password: '',
             token: '',
-            eventFileSizeLimit: 900
+            eventFileSizeLimit
         };
         // Initialize remote repo
         fs_1.mkdirSync(REMOTEDIR);
@@ -87,7 +82,12 @@ tape_1.default('intro', function intro(t) {
             t.deepEqual(newEvents, [], 'no new events');
             const eventFiles = new Set(yield fs_1.promises.readdir(DIR + '/_events'));
             const uniqueFiles = new Set(yield fs_1.promises.readdir(DIR + '/_uniques'));
-            t.equal(eventFiles.size, 1, 'only one event file on disk');
+            if (eventFileSizeLimit > 500) {
+                t.equal(eventFiles.size, 1, 'only one event file on disk');
+            }
+            else {
+                t.ok(eventFiles.size > 1, 'more than one event file');
+            }
             t.ok(eventFiles.has('1'), 'expected event file found on dist');
             t.equal(uniqueFiles.size, uids.length, 'expected # of uniques on disk');
             uids.forEach(u => t.ok(uniqueFiles.has(`${u}`), 'unique file created'));
@@ -141,6 +141,7 @@ tape_1.default('intro', function intro(t) {
             let events2 = 'never,give,up'.split(',').map(s => s + '\n');
             let uids2 = events2.map(slug);
             const { newEvents, newSharedUid } = yield index_1.writer(gatty2, '', uids2, events2);
+            const eventsSet = new Set(newEvents);
             const commits = yield git.log({ dir: DIR2, depth: 5000 });
             const uniqueFiles = yield fs_1.promises.readdir(DIR2 + '/_uniques');
             const eventsList = yield catEvents(gatty2);
@@ -149,6 +150,9 @@ tape_1.default('intro', function intro(t) {
             t.equal(commits.length, 5, 'now 5 commits');
             t.equal(uniqueFiles.length, events.length + events2.length + 3 + 3, 'all 12 events have uniques');
             t.equal(eventsList.trim().split('\n').length, 12, 'all 12 events available');
+            for (const e of 'ichi,ni,san,chillin,cruisin,flying,hello!,hi there!,how are you?'.split(',')) {
+                t.ok(eventsSet.has(e), e + ' present');
+            }
             rimraf.sync(DIR2);
         }
         // Force rollback
@@ -191,11 +195,18 @@ tape_1.default('intro', function intro(t) {
             rimraf.sync(DIR3);
         }
         SERVER.close();
-        rimraf.sync(DIR);
-        rimraf.sync(DIR2);
-        rimraf.sync(REMOTEDIR);
-        rimraf.sync(REMOTEDIR2);
-        rimraf.sync(REMOTEDIR + '.git');
+        directoryCleanup();
+    });
+}
+tape_1.default('intro', function (t) {
+    return __awaiter(this, void 0, void 0, function* () {
+        yield multiLimit(t, 900);
+        t.end();
+    });
+});
+tape_1.default('small size', function (t) {
+    return __awaiter(this, void 0, void 0, function* () {
+        yield multiLimit(t, 4);
         t.end();
     });
 });
@@ -221,5 +232,12 @@ function cloneAndRollback(init, url, roll) {
         yield index_1.gitReset({ pfs: gatty2.pfs, git, dir: DIR2, ref: "HEAD~" + roll, branch: 'master', hard: true, cached: false });
         return gatty2;
     });
+}
+function directoryCleanup() {
+    rimraf.sync(DIR);
+    rimraf.sync(DIR2);
+    rimraf.sync(REMOTEDIR);
+    rimraf.sync(REMOTEDIR2);
+    rimraf.sync(REMOTEDIR + '.git');
 }
 //# sourceMappingURL=test-node.js.map
