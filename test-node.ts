@@ -188,12 +188,23 @@ tape('intro', async function intro(t) {
 
     const {newEvents: newEvents2, newSharedUid: newSharedUid2} = await writer(gatty2, 'up', uids2, events2);
 
-    const {newEvents: newEvents3, newSharedUid: newSharedUid3} = await writer(gatty3, 'up', uids3, events3, 10, true);
+    // For device 3, skip the initial pull. This simulates the condition where device2 and device3 both pull+push at the
+    // same time but the remote store gets device2's first, so device3's push will fail. This is a hyperfine edge case.
+    const backup = git.pull;
+    let pullSkipCount = 0;
+    git.pull = (...args: any) => {
+      t.comment('FAKE GIT PULL, SKIPPING, but replacing');
+      pullSkipCount++;
+      git.pull = backup;
+    };
+
+    const {newEvents: newEvents3, newSharedUid: newSharedUid3} = await writer(gatty3, 'up', uids3, events3);
 
     const commits = await git.log({dir: DIR3, depth: 5000});
     const uniqueFiles = await promises.readdir(DIR3 + '/_uniques');
     const eventsList = await catEvents(gatty3);
 
+    t.equal(pullSkipCount, 1, 'we did skip a pull and caused a conflict');
     t.equal(commits.length, 7, 'device3 picked up all commits');
     // hello + chilling + ichi + never + im + doh = 3 + 3 + 3 + 3 + 2 + 3
     t.equal(uniqueFiles.length, events.length + 3 + 3 + 3 + 2 + 3, 'device3 got all uniques')
@@ -234,11 +245,6 @@ function last<T>(arr: T[]): T {
 async function cloneAndRollback(init: Gatty, url: string, roll: number): Promise<Gatty> {
   const gatty2 = {...init, dir: DIR2};
   await git.clone({dir: DIR2, url});
-  await gitReset({pfs: gatty2.pfs, git, dir: DIR2, ref: "HEAD~" + roll, branch: 'master', hard: true});
-  const globbed = await globby(DIR2 + '/**/*');
-  const statuses = await Promise.all(globbed.map(s => s.slice(DIR2.length + 1))
-                                         .map(f => git.status({dir: DIR2, filepath: f}).then((s: string) => ({f, s}))));
-  // delete leftover files (git reset won't delete them for us)
-  await Promise.all(statuses.filter(g => g.s !== 'unmodified').map(g => gatty2.pfs.unlink(DIR2 + '/' + g.f)));
+  await gitReset({pfs: gatty2.pfs, git, dir: DIR2, ref: "HEAD~" + roll, branch: 'master', hard: true, cached: false});
   return gatty2;
 }

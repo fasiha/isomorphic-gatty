@@ -226,8 +226,8 @@ async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[
   return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents};
 }
 
-export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[], maxRetries = 3,
-                             skipPullFirst = false): Promise<{newSharedUid: string, newEvents: string[]}> {
+export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[],
+                             maxRetries = 3): Promise<{newSharedUid: string, newEvents: string[]}> {
   const {pfs, dir, username, password, token} = gatty;
   const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
   const name = 'Gatty';
@@ -235,12 +235,9 @@ export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[]
   let newEvents: string[] = [];
   for (let retry = 0; retry < maxRetries; retry++) {
     // pull remote (rewind if failed? or re-run setup with clean slate?)
-    if (!skipPullFirst || (skipPullFirst && retry > 0)) {
-      try {
-        await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
-      } catch { continue; }
-    } else {
-    }
+    try {
+      await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
+    } catch { continue; }
     // edit and git add and get new events
     newEvents = [];
     newEvents = (await writeNewEvents(gatty, lastSharedUid, uids, events)).newEvents;
@@ -258,7 +255,6 @@ export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[]
       await git.push({dir, username, password, token});
       return {newSharedUid: last(uids) || lastSharedUid, newEvents};
     } catch (pushed) {
-      console.error('git push errors found', pushed);
       // if push failed, roll back commit and retry, up to some maximum
       const branch = await git.currentBranch({dir}) || 'master';
       await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true, cached: false});

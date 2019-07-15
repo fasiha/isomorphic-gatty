@@ -223,7 +223,7 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
         return { newEvents: lastSharedUid ? newEvents.slice(1) : newEvents };
     });
 }
-function writer(gatty, lastSharedUid, uids, events, maxRetries = 3, skipPullFirst = false) {
+function writer(gatty, lastSharedUid, uids, events, maxRetries = 3) {
     return __awaiter(this, void 0, void 0, function* () {
         const { pfs, dir, username, password, token } = gatty;
         const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
@@ -232,15 +232,11 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3, skipPullFirs
         let newEvents = [];
         for (let retry = 0; retry < maxRetries; retry++) {
             // pull remote (rewind if failed? or re-run setup with clean slate?)
-            if (!skipPullFirst || (skipPullFirst && retry > 0)) {
-                try {
-                    yield git.pull({ dir, singleBranch: true, fastForwardOnly: true, username, password, token });
-                }
-                catch (_a) {
-                    continue;
-                }
+            try {
+                yield git.pull({ dir, singleBranch: true, fastForwardOnly: true, username, password, token });
             }
-            else {
+            catch (_a) {
+                continue;
             }
             // edit and git add and get new events
             newEvents = [];
@@ -259,7 +255,6 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3, skipPullFirs
                 return { newSharedUid: last(uids) || lastSharedUid, newEvents };
             }
             catch (pushed) {
-                console.error('git push errors found', pushed);
                 // if push failed, roll back commit and retry, up to some maximum
                 const branch = (yield git.currentBranch({ dir })) || 'master';
                 yield gitReset({ pfs, git, dir, ref: 'HEAD~1', branch, hard: true, cached: false });
