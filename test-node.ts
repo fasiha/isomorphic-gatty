@@ -2,7 +2,7 @@ import {execSync} from 'child_process';
 import {mkdirSync, promises, readdir} from 'fs';
 import tape from 'tape';
 
-import {Gatty, writer} from './index';
+import {Gatty, gitReset, writer} from './index';
 
 const git = require('isomorphic-git');
 const fs = require('fs');
@@ -16,10 +16,12 @@ const uids = events.map(slug);
 
 const REMOTEDIR = 'github';
 const DIR = 'whee';
+const DIR2 = DIR + '2';
 
 tape('intro', async function intro(t) {
   // delete old git dirs
   rimraf.sync(DIR);
+  rimraf.sync(DIR2);
   rimraf.sync(REMOTEDIR);
   rimraf.sync(REMOTEDIR + '.git');
 
@@ -36,18 +38,21 @@ tape('intro', async function intro(t) {
     eventFileSizeLimit: 900
   };
 
+  // Initialize remote repo
   mkdirSync(REMOTEDIR);
   git.init({dir: REMOTEDIR});
   await promises.writeFile(`${REMOTEDIR}/README.md`, 'Welcome!');
   await git.add({dir: REMOTEDIR, filepath: 'README.md'});
   await git.commit({dir: REMOTEDIR, message: 'Initial', author: {name: 'Gatty', email: 'gatty@localhost'}});
 
+  // create bare remote repo so we can (mock) push to it
   execSync(`git clone --bare ${REMOTEDIR} ${REMOTEDIR}.git`);
+  // Start the mock git server
   execSync(`node_modules/.bin/git-http-mock-server start`);
-
-  await git.clone({dir: gatty.dir, url: `http://localhost:8174/${REMOTEDIR}.git`});
-
-  await git.pull({dir: gatty.dir});
+  // This is the server URL
+  const URL = `http://localhost:8174/${REMOTEDIR}.git`;
+  // clone a device
+  await git.clone({dir: gatty.dir, url: URL});
 
   // nothing to write, empty store
   {
@@ -116,12 +121,15 @@ tape('intro', async function intro(t) {
 
   // NEW device that has only partial store (the first 3 commits)
   {
+    const gatty2 = {...gatty, dir: DIR2};
+    await git.clone({dir: DIR2, url: URL});
+
     let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
     let uids2 = events2.map(slug);
-    const {newEvents, newSharedUid} = await writer(gatty, last(uids), uids2, events2);
+    const {newEvents, newSharedUid} = await writer(gatty2, last(uids), uids2, events2);
     const commits = await git.log({dir: DIR, depth: 5000});
     const uniqueFiles = await promises.readdir(DIR + '/_uniques');
-    const eventsList = await catEvents(gatty);
+    const eventsList = await catEvents(gatty2);
 
     t.deepEqual(newEvents, ['chillin', 'cruisin', 'flying'], 'got correct remote events');
     t.equal(newSharedUid, last(uids2), 'updated up to last local unique');
@@ -146,8 +154,28 @@ tape('intro', async function intro(t) {
     t.equal(eventsList.trim().split('\n').length, 12, 'all 12 events available');
   }
 
+  // Force rollback
+  {
+    let events2 = 'im,first'.split(',').map(s => s + '\n');
+    let uids2 = events2.map(slug);
+
+    let events3 = 'iwas,second'.split(',').map(s => s + '\n');
+    let uids3 = events3.map(slug);
+
+    const {newEvents: newEvents2, newSharedUid: newSharedUid2} = await writer(gatty, '', uids2, events2);
+
+    const {newEvents: newEvents3, newSharedUid: newSharedUid3} = await writer(gatty, '', uids3, events3, 2, true);
+
+    const commits = await git.log({dir: DIR, depth: 5000});
+    const uniqueFiles = await promises.readdir(DIR + '/_uniques');
+    const eventsList = await catEvents(gatty);
+
+    console.log({newEvents2, newSharedUid2, newEvents3, newSharedUid3, commits, uniqueFiles, eventsList});
+  }
+
   execSync(`node_modules/.bin/git-http-mock-server stop`);
   rimraf.sync(DIR);
+  rimraf.sync(DIR2);
   rimraf.sync(REMOTEDIR);
   rimraf.sync(REMOTEDIR + '.git');
 

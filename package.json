@@ -19,6 +19,7 @@
     "git-http-mock-server": "^1.2.0",
     "globby": "^10.0.1",
     "google-closure-compiler": "^20190618.0.0",
+    "node-git-server": "^0.6.0",
     "rimraf": "^2.6.3",
     "tape": "^4.11.0",
     "typescript": "^3.5.3"

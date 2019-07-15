@@ -24,10 +24,12 @@ const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
 const uids = events.map(slug);
 const REMOTEDIR = 'github';
 const DIR = 'whee';
+const DIR2 = DIR + '2';
 tape_1.default('intro', function intro(t) {
     return __awaiter(this, void 0, void 0, function* () {
         // delete old git dirs
         rimraf.sync(DIR);
+        rimraf.sync(DIR2);
         rimraf.sync(REMOTEDIR);
         rimraf.sync(REMOTEDIR + '.git');
         const gatty = {
@@ -42,15 +44,20 @@ tape_1.default('intro', function intro(t) {
             token: '',
             eventFileSizeLimit: 900
         };
+        // Initialize remote repo
         fs_1.mkdirSync(REMOTEDIR);
         git.init({ dir: REMOTEDIR });
         yield fs_1.promises.writeFile(`${REMOTEDIR}/README.md`, 'Welcome!');
         yield git.add({ dir: REMOTEDIR, filepath: 'README.md' });
         yield git.commit({ dir: REMOTEDIR, message: 'Initial', author: { name: 'Gatty', email: 'gatty@localhost' } });
+        // create bare remote repo so we can (mock) push to it
         child_process_1.execSync(`git clone --bare ${REMOTEDIR} ${REMOTEDIR}.git`);
+        // Start the mock git server
         child_process_1.execSync(`node_modules/.bin/git-http-mock-server start`);
-        yield git.clone({ dir: gatty.dir, url: `http://localhost:8174/${REMOTEDIR}.git` });
-        yield git.pull({ dir: gatty.dir });
+        // This is the server URL
+        const URL = `http://localhost:8174/${REMOTEDIR}.git`;
+        // clone a device
+        yield git.clone({ dir: gatty.dir, url: URL });
         // nothing to write, empty store
         {
             const { newEvents, newSharedUid } = yield index_1.writer(gatty, '', [], []);
@@ -104,12 +111,14 @@ tape_1.default('intro', function intro(t) {
         }
         // NEW device that has only partial store (the first 3 commits)
         {
+            const gatty2 = Object.assign({}, gatty, { dir: DIR2 });
+            yield git.clone({ dir: DIR2, url: URL });
             let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
             let uids2 = events2.map(slug);
-            const { newEvents, newSharedUid } = yield index_1.writer(gatty, last(uids), uids2, events2);
+            const { newEvents, newSharedUid } = yield index_1.writer(gatty2, last(uids), uids2, events2);
             const commits = yield git.log({ dir: DIR, depth: 5000 });
             const uniqueFiles = yield fs_1.promises.readdir(DIR + '/_uniques');
-            const eventsList = yield catEvents(gatty);
+            const eventsList = yield catEvents(gatty2);
             t.deepEqual(newEvents, ['chillin', 'cruisin', 'flying'], 'got correct remote events');
             t.equal(newSharedUid, last(uids2), 'updated up to last local unique');
             t.equal(commits.length, 4, 'now 4 commits');
@@ -130,8 +139,22 @@ tape_1.default('intro', function intro(t) {
             t.equal(uniqueFiles.length, events.length + events2.length + 3 + 3, 'all 12 events have uniques');
             t.equal(eventsList.trim().split('\n').length, 12, 'all 12 events available');
         }
+        // Force rollback
+        {
+            let events2 = 'im,first'.split(',').map(s => s + '\n');
+            let uids2 = events2.map(slug);
+            let events3 = 'iwas,second'.split(',').map(s => s + '\n');
+            let uids3 = events3.map(slug);
+            const { newEvents: newEvents2, newSharedUid: newSharedUid2 } = yield index_1.writer(gatty, '', uids2, events2);
+            const { newEvents: newEvents3, newSharedUid: newSharedUid3 } = yield index_1.writer(gatty, '', uids3, events3, 2, true);
+            const commits = yield git.log({ dir: DIR, depth: 5000 });
+            const uniqueFiles = yield fs_1.promises.readdir(DIR + '/_uniques');
+            const eventsList = yield catEvents(gatty);
+            console.log({ newEvents2, newSharedUid2, newEvents3, newSharedUid3, commits, uniqueFiles, eventsList });
+        }
         child_process_1.execSync(`node_modules/.bin/git-http-mock-server stop`);
         rimraf.sync(DIR);
+        rimraf.sync(DIR2);
         rimraf.sync(REMOTEDIR);
         rimraf.sync(REMOTEDIR + '.git');
         t.end();

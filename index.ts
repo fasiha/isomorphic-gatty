@@ -64,7 +64,7 @@ async function appendFile({pfs, dir}: Gatty, filepath: string, content: string):
   return makePointer(filepath, oldContents.length + content.length);
 }
 
-type GitResetArgs = {
+export type GitResetArgs = {
   pfs: any,
   git: any,
   dir: string,
@@ -73,7 +73,7 @@ type GitResetArgs = {
   hard?: boolean
 };
 // Thanks to jcubic: https://github.com/isomorphic-git/isomorphic-git/issues/729#issuecomment-489523944
-async function gitReset({pfs, git, dir, ref, branch, hard = false}: GitResetArgs) {
+export async function gitReset({pfs, git, dir, ref, branch, hard = false}: GitResetArgs) {
   const re = /^HEAD~([0-9]+)$/;
   const m = ref.match(re);
   if (!m) { throw new Error(`Wrong ref ${ref}`) }
@@ -211,18 +211,23 @@ async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[
   return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents};
 }
 
-export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[],
-                             maxRetries = 3): Promise<{newSharedUid: string, newEvents: string[]}> {
+export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[], maxRetries = 3,
+                             skipPullFirst = false): Promise<{newSharedUid: string, newEvents: string[]}> {
   const {pfs, dir, username, password, token} = gatty;
   const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
   const name = 'Gatty';
   const email = 'gatty@localhost';
   let newEvents: string[] = [];
   for (let retry = 0; retry < maxRetries; retry++) {
+    console.log('RETRY ' + retry);
     // pull remote (rewind if failed? or re-run setup with clean slate?)
-    try {
-      await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
-    } catch { continue; }
+    if (!skipPullFirst || (skipPullFirst && retry > 0)) {
+      try {
+        await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
+      } catch { continue; }
+    } else {
+      console.log('!!! SKIPPING !!!')
+    }
     // edit and git add and get new events
     newEvents = [];
     newEvents = (await writeNewEvents(gatty, lastSharedUid, uids, events)).newEvents;

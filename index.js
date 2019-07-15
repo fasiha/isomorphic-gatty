@@ -72,6 +72,7 @@ function gitReset({ pfs, git, dir, ref, branch, hard = false }) {
         return git.checkout({ dir, ref: branch });
     });
 }
+exports.gitReset = gitReset;
 function fileExists({ pfs, dir }, filepath) {
     return __awaiter(this, void 0, void 0, function* () {
         const fullpath = `${dir}/${filepath}`;
@@ -209,7 +210,7 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
         return { newEvents: lastSharedUid ? newEvents.slice(1) : newEvents };
     });
 }
-function writer(gatty, lastSharedUid, uids, events, maxRetries = 3) {
+function writer(gatty, lastSharedUid, uids, events, maxRetries = 3, skipPullFirst = false) {
     return __awaiter(this, void 0, void 0, function* () {
         const { pfs, dir, username, password, token } = gatty;
         const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
@@ -217,12 +218,18 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3) {
         const email = 'gatty@localhost';
         let newEvents = [];
         for (let retry = 0; retry < maxRetries; retry++) {
+            console.log('RETRY ' + retry);
             // pull remote (rewind if failed? or re-run setup with clean slate?)
-            try {
-                yield git.pull({ dir, singleBranch: true, fastForwardOnly: true, username, password, token });
+            if (!skipPullFirst || (skipPullFirst && retry > 0)) {
+                try {
+                    yield git.pull({ dir, singleBranch: true, fastForwardOnly: true, username, password, token });
+                }
+                catch (_a) {
+                    continue;
+                }
             }
-            catch (_a) {
-                continue;
+            else {
+                console.log('!!! SKIPPING !!!');
             }
             // edit and git add and get new events
             newEvents = [];
