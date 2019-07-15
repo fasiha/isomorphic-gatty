@@ -66,9 +66,9 @@ tape_1.default('intro', function intro(t) {
         }
         // execSync(`node_modules/.bin/git-http-mock-server start`);
         // This is the server URL
-        const URL = `http://localhost:8174/${REMOTEDIR}.git`;
+        const REMOTEURL = `http://localhost:8174/${REMOTEDIR}.git`;
         // clone a device
-        yield git.clone({ dir: gatty.dir, url: URL });
+        yield git.clone({ dir: gatty.dir, url: REMOTEURL });
         // nothing to write, empty store
         {
             const { newEvents, newSharedUid } = yield index_1.writer(gatty, '', [], []);
@@ -122,16 +122,7 @@ tape_1.default('intro', function intro(t) {
         }
         // NEW device that has only partial store (the first 3 events from the first commit), with events of its own
         {
-            const gatty2 = Object.assign({}, gatty, { dir: DIR2 });
-            {
-                yield git.clone({ dir: DIR2, url: URL });
-                yield index_1.gitReset({ pfs: gatty2.pfs, git, dir: DIR2, ref: "HEAD~1", branch: 'master', hard: true });
-                const globbed = yield globby_1.default(DIR2 + '/**/*');
-                const statuses = yield Promise.all(globbed.map(s => s.slice(DIR2.length + 1))
-                    .map(f => git.status({ dir: DIR2, filepath: f }).then((s) => ({ f, s }))));
-                // delete leftover files (git reset won't delete them for us)
-                yield Promise.all(statuses.filter(g => g.s !== 'unmodified').map(g => gatty2.pfs.unlink(DIR2 + '/' + g.f)));
-            }
+            const gatty2 = yield cloneAndRollback(gatty, REMOTEURL, 1);
             let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
             let uids2 = events2.map(slug);
             const { newEvents, newSharedUid } = yield index_1.writer(gatty2, last(uids), uids2, events2);
@@ -147,17 +138,7 @@ tape_1.default('intro', function intro(t) {
         }
         // fresh new device, with events to commit, nothing in store
         {
-            const gatty2 = Object.assign({}, gatty, { dir: DIR2 });
-            {
-                yield git.clone({ dir: DIR2, url: URL });
-                // roll back to just README commit
-                yield index_1.gitReset({ pfs: gatty2.pfs, git, dir: DIR2, ref: "HEAD~3", branch: 'master', hard: true });
-                const globbed = yield globby_1.default(DIR2 + '/**/*');
-                const statuses = yield Promise.all(globbed.map(s => s.slice(DIR2.length + 1))
-                    .map(f => git.status({ dir: DIR2, filepath: f }).then((s) => ({ f, s }))));
-                // delete leftover files (git reset won't delete them for us)
-                yield Promise.all(statuses.filter(g => g.s !== 'unmodified').map(g => gatty2.pfs.unlink(DIR2 + '/' + g.f)));
-            }
+            const gatty2 = yield cloneAndRollback(gatty, REMOTEURL, 3);
             let events2 = 'never,give,up'.split(',').map(s => s + '\n');
             let uids2 = events2.map(slug);
             const { newEvents, newSharedUid } = yield index_1.writer(gatty2, '', uids2, events2);
@@ -172,17 +153,33 @@ tape_1.default('intro', function intro(t) {
             rimraf.sync(DIR2);
         }
         // Force rollback
-        if (false) {
+        {
+            const DIR3 = DIR + '3';
+            rimraf.sync(DIR2);
+            rimraf.sync(DIR3);
+            yield git.clone({ dir: DIR2, url: REMOTEURL });
+            yield git.clone({ dir: DIR3, url: REMOTEURL });
+            const gatty2 = Object.assign({}, gatty, { dir: DIR2 });
+            const gatty3 = Object.assign({}, gatty, { dir: DIR3 });
             let events2 = 'im,first'.split(',').map(s => s + '\n');
             let uids2 = events2.map(slug);
-            let events3 = 'iwas,second'.split(',').map(s => s + '\n');
+            let events3 = 'iwas,second,doh'.split(',').map(s => s + '\n');
             let uids3 = events3.map(slug);
-            const { newEvents: newEvents2, newSharedUid: newSharedUid2 } = yield index_1.writer(gatty, '', uids2, events2);
-            const { newEvents: newEvents3, newSharedUid: newSharedUid3 } = yield index_1.writer(gatty, '', uids3, events3, 2, true);
-            const commits = yield git.log({ dir: DIR, depth: 5000 });
-            const uniqueFiles = yield fs_1.promises.readdir(DIR + '/_uniques');
-            const eventsList = yield catEvents(gatty);
-            // console.log({newEvents2, newSharedUid2, newEvents3, newSharedUid3, commits, uniqueFiles, eventsList});
+            const { newEvents: newEvents2, newSharedUid: newSharedUid2 } = yield index_1.writer(gatty2, 'up', uids2, events2);
+            const { newEvents: newEvents3, newSharedUid: newSharedUid3 } = yield index_1.writer(gatty3, 'up', uids3, events3, 10, true);
+            const commits = yield git.log({ dir: DIR3, depth: 5000 });
+            const uniqueFiles = yield fs_1.promises.readdir(DIR3 + '/_uniques');
+            const eventsList = yield catEvents(gatty3);
+            t.equal(commits.length, 7, 'device3 picked up all commits');
+            // hello + chilling + ichi + never + im + doh = 3 + 3 + 3 + 3 + 2 + 3
+            t.equal(uniqueFiles.length, events.length + 3 + 3 + 3 + 2 + 3, 'device3 got all uniques');
+            t.equal(eventsList.trim().split('\n').length, events.length + 3 + 3 + 3 + 2 + 3, 'and all events');
+            t.equal(newEvents2.length, 0, 'dev2 got nothing new');
+            t.equal(newSharedUid2, last(uids2));
+            t.equal(newEvents3.length, 2, 'dev3 got two remotes from dev2');
+            t.equal(newSharedUid3, last(uids3));
+            rimraf.sync(DIR2);
+            rimraf.sync(DIR3);
         }
         SERVER.close();
         rimraf.sync(DIR);
@@ -207,5 +204,18 @@ function last(arr) {
         return arr[arr.length - 1];
     }
     throw new Error('out-of-bounds');
+}
+function cloneAndRollback(init, url, roll) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const gatty2 = Object.assign({}, init, { dir: DIR2 });
+        yield git.clone({ dir: DIR2, url });
+        yield index_1.gitReset({ pfs: gatty2.pfs, git, dir: DIR2, ref: "HEAD~" + roll, branch: 'master', hard: true });
+        const globbed = yield globby_1.default(DIR2 + '/**/*');
+        const statuses = yield Promise.all(globbed.map(s => s.slice(DIR2.length + 1))
+            .map(f => git.status({ dir: DIR2, filepath: f }).then((s) => ({ f, s }))));
+        // delete leftover files (git reset won't delete them for us)
+        yield Promise.all(statuses.filter(g => g.s !== 'unmodified').map(g => gatty2.pfs.unlink(DIR2 + '/' + g.f)));
+        return gatty2;
+    });
 }
 //# sourceMappingURL=test-node.js.map

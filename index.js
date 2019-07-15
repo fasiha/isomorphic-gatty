@@ -49,7 +49,7 @@ function appendFile({ pfs, dir }, filepath, content) {
     });
 }
 // Thanks to jcubic: https://github.com/isomorphic-git/isomorphic-git/issues/729#issuecomment-489523944
-function gitReset({ pfs, git, dir, ref, branch, hard = false }) {
+function gitReset({ pfs, git, dir, ref, branch, hard = false, cached = true }) {
     return __awaiter(this, void 0, void 0, function* () {
         const re = /^HEAD~([0-9]+)$/;
         const m = ref.match(re);
@@ -62,6 +62,11 @@ function gitReset({ pfs, git, dir, ref, branch, hard = false }) {
             throw new Error('Not enough commits');
         }
         const commit = commits[commits.length - 1].oid;
+        // for non-cached mode, list files in staging area
+        let before = [];
+        if (!cached) {
+            before = yield git.listFiles({ dir });
+        }
         yield pfs.writeFile(`${dir}/.git/refs/heads/${branch}`, commit + '\n');
         if (!hard) {
             return;
@@ -69,7 +74,15 @@ function gitReset({ pfs, git, dir, ref, branch, hard = false }) {
         // clear the index (if any)
         yield pfs.unlink(`${dir}/.git/index`);
         // checkout the branch into the working tree
-        return git.checkout({ dir, ref: branch });
+        yield git.checkout({ dir, ref: branch });
+        // delete any files if non-cached requested
+        if (!cached) {
+            const after = yield git.listFiles({ dir });
+            if (before.length !== after.length) {
+                const afterSet = new Set(after);
+                return Promise.all(before.filter(f => !afterSet.has(f)).map(f => pfs.unlink(`${dir}/${f}`)));
+            }
+        }
     });
 }
 exports.gitReset = gitReset;
@@ -218,7 +231,6 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3, skipPullFirs
         const email = 'gatty@localhost';
         let newEvents = [];
         for (let retry = 0; retry < maxRetries; retry++) {
-            console.log('RETRY ' + retry);
             // pull remote (rewind if failed? or re-run setup with clean slate?)
             if (!skipPullFirst || (skipPullFirst && retry > 0)) {
                 try {
@@ -229,7 +241,6 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3, skipPullFirs
                 }
             }
             else {
-                console.log('!!! SKIPPING !!!');
             }
             // edit and git add and get new events
             newEvents = [];
@@ -243,15 +254,15 @@ function writer(gatty, lastSharedUid, uids, events, maxRetries = 3, skipPullFirs
             // commit
             yield git.commit({ dir, message, author: { name, email } });
             // push
-            const pushed = yield git.push({ dir, username, password, token });
-            if (pushed.errors && pushed.errors.length) {
+            try {
+                yield git.push({ dir, username, password, token });
+                return { newSharedUid: last(uids) || lastSharedUid, newEvents };
+            }
+            catch (pushed) {
                 console.error('git push errors found', pushed);
                 // if push failed, roll back commit and retry, up to some maximum
                 const branch = (yield git.currentBranch({ dir })) || 'master';
-                yield gitReset({ pfs, git, dir, ref: 'HEAD~1', branch, hard: true });
-            }
-            else {
-                return { newSharedUid: last(uids) || lastSharedUid, newEvents };
+                yield gitReset({ pfs, git, dir, ref: 'HEAD~1', branch, hard: true, cached: false });
             }
         }
         return { newSharedUid: lastSharedUid, newEvents };

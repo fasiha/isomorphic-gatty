@@ -65,28 +65,43 @@ async function appendFile({pfs, dir}: Gatty, filepath: string, content: string):
 }
 
 export type GitResetArgs = {
-  pfs: any,
-  git: any,
+  pfs: PFS,
+  git: typeof git,
   dir: string,
   ref: string,
   branch: string,
-  hard?: boolean
+  hard?: boolean,
+  cached?: boolean
 };
 // Thanks to jcubic: https://github.com/isomorphic-git/isomorphic-git/issues/729#issuecomment-489523944
-export async function gitReset({pfs, git, dir, ref, branch, hard = false}: GitResetArgs) {
+export async function gitReset({pfs, git, dir, ref, branch, hard = false, cached = true}: GitResetArgs) {
   const re = /^HEAD~([0-9]+)$/;
   const m = ref.match(re);
   if (!m) { throw new Error(`Wrong ref ${ref}`) }
   const count = +m[1];
   const commits = await git.log({dir, depth: count + 1});
   if (commits.length < count + 1) { throw new Error('Not enough commits'); }
-  const commit: string = commits[commits.length - 1].oid;
+  const commit = commits[commits.length - 1].oid;
+
+  // for non-cached mode, list files in staging area
+  let before: string[] = [];
+  if (!cached) { before = await git.listFiles({dir}); }
+
   await pfs.writeFile(`${dir}/.git/refs/heads/${branch}`, commit + '\n');
-  if (!hard) { return }
+  if (!hard) { return; }
   // clear the index (if any)
   await pfs.unlink(`${dir}/.git/index`);
   // checkout the branch into the working tree
-  return git.checkout({dir, ref: branch});
+  await git.checkout({dir, ref: branch});
+
+  // delete any files if non-cached requested
+  if (!cached) {
+    const after = await git.listFiles({dir});
+    if (before.length !== after.length) {
+      const afterSet = new Set(after);
+      return Promise.all(before.filter(f => !afterSet.has(f)).map(f => pfs.unlink(`${dir}/${f}`)));
+    }
+  }
 }
 
 async function fileExists({pfs, dir}: Gatty, filepath: string): Promise<boolean> {
@@ -219,14 +234,12 @@ export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[]
   const email = 'gatty@localhost';
   let newEvents: string[] = [];
   for (let retry = 0; retry < maxRetries; retry++) {
-    console.log('RETRY ' + retry);
     // pull remote (rewind if failed? or re-run setup with clean slate?)
     if (!skipPullFirst || (skipPullFirst && retry > 0)) {
       try {
         await git.pull({dir, singleBranch: true, fastForwardOnly: true, username, password, token});
       } catch { continue; }
     } else {
-      console.log('!!! SKIPPING !!!')
     }
     // edit and git add and get new events
     newEvents = [];
@@ -241,14 +254,14 @@ export async function writer(gatty: Gatty, lastSharedUid: string, uids: string[]
     // commit
     await git.commit({dir, message, author: {name, email}});
     // push
-    const pushed = await git.push({dir, username, password, token});
-    if (pushed.errors && pushed.errors.length) {
+    try {
+      await git.push({dir, username, password, token});
+      return {newSharedUid: last(uids) || lastSharedUid, newEvents};
+    } catch (pushed) {
       console.error('git push errors found', pushed);
       // if push failed, roll back commit and retry, up to some maximum
       const branch = await git.currentBranch({dir}) || 'master';
-      await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true});
-    } else {
-      return {newSharedUid: last(uids) || lastSharedUid, newEvents};
+      await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true, cached: false});
     }
   }
   return {newSharedUid: lastSharedUid, newEvents};
