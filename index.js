@@ -14,12 +14,13 @@ const DEFAULT_DIR = '/gitdir';
 function setup({ dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, password, token, eventFileSizeLimit = 900 } = {}, url, fs) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!fs) {
-            const fs = new LightningFS('fs', { wipe: true });
+            fs = new LightningFS('fs', { wipe: true });
             git.plugins.set('fs', fs);
         }
         const pfs = fs.promises;
+        yield pfs.mkdir(dir);
         yield git.clone({ url, dir, corsProxy, ref: branch, singleBranch: true, depth, since, username, password, token });
-        return { dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit };
+        return { url, dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit };
     });
 }
 exports.setup = setup;
@@ -224,7 +225,7 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
 }
 function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
     return __awaiter(this, void 0, void 0, function* () {
-        const { pfs, dir, username, password, token } = gatty;
+        const { pfs, dir, username, password, token, url } = gatty;
         const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
         const name = 'Gatty';
         const email = 'gatty@localhost';
@@ -250,7 +251,11 @@ function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
             yield git.commit({ dir, message, author: { name, email } });
             // push
             try {
-                yield git.push({ dir, username, password, token });
+                const pushed = yield git.push({ dir, url, username, password, token });
+                // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist
+                if (pushed && pushed.errors && pushed.errors.length) {
+                    throw pushed;
+                }
                 return { newSharedUid: last(uids) || lastSharedUid, newEvents };
             }
             catch (pushed) {
@@ -263,4 +268,34 @@ function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
     });
 }
 exports.sync = sync;
+function inspect(gatty) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const { pfs, dir } = gatty;
+        function printDirContents(dir) {
+            return __awaiter(this, void 0, void 0, function* () {
+                if (dir.endsWith('/.git')) {
+                    return;
+                }
+                const ls = yield pfs.readdir(dir);
+                const stats = yield Promise.all(ls.map(f => pfs.lstat(dir + '/' + f)));
+                const contents = [];
+                for (let idx = 0; idx < ls.length; idx++) {
+                    if (stats[idx].isDirectory()) {
+                        yield printDirContents(dir + '/' + ls[idx]);
+                        contents.push('(dir)');
+                    }
+                    else {
+                        contents.push(yield pfs.readFile(dir + '/' + ls[idx], 'utf8'));
+                    }
+                }
+                for (let idx = 0; idx < ls.length; idx++) {
+                    console.log(`# ${dir}/${ls[idx]}
+${contents[idx]}`);
+                }
+            });
+        }
+        yield printDirContents(dir);
+    });
+}
+exports.inspect = inspect;
 //# sourceMappingURL=index.js.map

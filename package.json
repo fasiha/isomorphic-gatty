@@ -7,6 +7,7 @@
     "test": "tape test-*js",
     "build": "tsc -p .",
     "dist": "browserify index.js -o index.bundle.js -s gatty",
+    "browser": "browserify test-browser.js -o test-browser.bundle.js -s test",
     "min": "google-closure-compiler --js=index.bundle.js --js_output_file=index.bundle.min.js --language_out ECMASCRIPT_2015"
   },
   "keywords": [

@@ -18,6 +18,7 @@ export type Gatty = {
   username?: string,
   password?: string,
   token?: string,
+  url?: string,
 };
 
 export async function setup(
@@ -25,13 +26,14 @@ export async function setup(
         Partial<Gatty> = {},
     url: string, fs?: any): Promise<Gatty> {
   if (!fs) {
-    const fs = new LightningFS('fs', {wipe: true});
+    fs = new LightningFS('fs', {wipe: true});
     git.plugins.set('fs', fs);
   }
   const pfs = fs.promises;
 
+  await pfs.mkdir(dir);
   await git.clone({url, dir, corsProxy, ref: branch, singleBranch: true, depth, since, username, password, token});
-  return {dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit};
+  return {url, dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit};
 }
 
 async function readFile({dir, pfs}: Gatty, filepath: string): Promise<string> {
@@ -219,7 +221,7 @@ async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[
 
 export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[],
                            maxRetries = 3): Promise<{newSharedUid: string, newEvents: string[]}> {
-  const {pfs, dir, username, password, token} = gatty;
+  const {pfs, dir, username, password, token, url} = gatty;
   const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
   const name = 'Gatty';
   const email = 'gatty@localhost';
@@ -243,7 +245,9 @@ export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], 
     await git.commit({dir, message, author: {name, email}});
     // push
     try {
-      await git.push({dir, username, password, token});
+      const pushed = await git.push({dir, url, username, password, token});
+      // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist
+      if (pushed && pushed.errors && pushed.errors.length) { throw pushed; }
       return {newSharedUid: last(uids) || lastSharedUid, newEvents};
     } catch (pushed) {
       // if push failed, roll back commit and retry, up to some maximum
@@ -252,4 +256,27 @@ export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], 
     }
   }
   return {newSharedUid: lastSharedUid, newEvents};
+}
+
+export async function inspect(gatty: Gatty) {
+  const {pfs, dir} = gatty;
+  async function printDirContents(dir: string) {
+    if (dir.endsWith('/.git')) { return; }
+    const ls = await pfs.readdir(dir);
+    const stats = await Promise.all(ls.map(f => pfs.lstat(dir + '/' + f)));
+    const contents: string[] = [];
+    for (let idx = 0; idx < ls.length; idx++) {
+      if (stats[idx].isDirectory()) {
+        await printDirContents(dir + '/' + ls[idx]);
+        contents.push('(dir)');
+      } else {
+        contents.push(await pfs.readFile(dir + '/' + ls[idx], 'utf8'));
+      }
+    }
+    for (let idx = 0; idx < ls.length; idx++) {
+      console.log(`# ${dir}/${ls[idx]}
+${contents[idx]}`);
+    }
+  }
+  await printDirContents(dir);
 }
