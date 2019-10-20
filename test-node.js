@@ -21,7 +21,7 @@ const rimraf = require('rimraf');
 const Server = require('node-git-server');
 git.plugins.set('fs', fs);
 function slug(s) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, ''); }
-const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
+const events = 'hello!,hi there!,how are you?'.split(',');
 const uids = events.map(slug);
 const REMOTEDIR = 'github';
 const REMOTEDIR2 = 'github2';
@@ -96,7 +96,7 @@ function multiLimit(t, eventFileSizeLimitBytes = 900) {
         }
         // Append new events, no new events on remote
         {
-            let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
+            let events2 = 'chillin,cruisin,flying'.split(',');
             let uids2 = events2.map(slug);
             const { newEvents, newSharedUid } = yield index_1.sync(gatty, last(uids), uids2, events2);
             const commits = yield git.log({ dir: DIR, depth: 5000 });
@@ -111,7 +111,7 @@ function multiLimit(t, eventFileSizeLimitBytes = 900) {
         // NEW device that has only partial store (the first 3 events from the first commit), with events of its own
         {
             const gatty2 = yield cloneAndRollback(gatty, REMOTEURL, 1);
-            let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
+            let events2 = 'ichi,ni,san'.split(',');
             let uids2 = events2.map(slug);
             const { newEvents, newSharedUid } = yield index_1.sync(gatty2, last(uids), uids2, events2);
             const commits = yield git.log({ dir: DIR2, depth: 5000 });
@@ -127,7 +127,7 @@ function multiLimit(t, eventFileSizeLimitBytes = 900) {
         // fresh new device, with events to commit, nothing in store
         {
             const gatty2 = yield cloneAndRollback(gatty, REMOTEURL, 3);
-            let events2 = 'never,give,up'.split(',').map(s => s + '\n');
+            let events2 = 'never,give,up'.split(',');
             let uids2 = events2.map(slug);
             const { newEvents, newSharedUid } = yield index_1.sync(gatty2, '', uids2, events2);
             const eventsSet = new Set(newEvents);
@@ -144,6 +144,15 @@ function multiLimit(t, eventFileSizeLimitBytes = 900) {
             }
             rimraf.sync(DIR2);
         }
+        // fresh new device, NO events of its own, NOTHING to store: the most common case!
+        {
+            const init = { pfs: fs_1.promises, dir: DIR2, eventFileSizeLimitBytes };
+            const gatty2 = yield index_1.setup(init, REMOTEURL, fs);
+            const { newEvents, newSharedUid } = yield index_1.sync(gatty2, '', [], []);
+            t.equal(newEvents.length, 9 + 3, 'all 12 remote events retrieved');
+            // t.ok(newSharedUid, 'newSharedUid is NOT empty'); // FIXME <sad>
+            rimraf.sync(DIR2);
+        }
         // Force rollback
         {
             const DIR3 = DIR + '3';
@@ -153,9 +162,9 @@ function multiLimit(t, eventFileSizeLimitBytes = 900) {
             yield git.clone({ dir: DIR3, url: REMOTEURL });
             const gatty2 = Object.assign({}, gatty, { dir: DIR2 });
             const gatty3 = Object.assign({}, gatty, { dir: DIR3 });
-            let events2 = 'im,first'.split(',').map(s => s + '\n');
+            let events2 = 'im,first'.split(',');
             let uids2 = events2.map(slug);
-            let events3 = 'iwas,second,doh'.split(',').map(s => s + '\n');
+            let events3 = 'iwas,second,doh'.split(',');
             let uids3 = events3.map(slug);
             const { newEvents: newEvents2, newSharedUid: newSharedUid2 } = yield index_1.sync(gatty2, 'up', uids2, events2);
             // For device 3, skip the initial pull. This simulates the condition where device2 and device3 both pull+push at the

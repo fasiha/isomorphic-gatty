@@ -131,8 +131,8 @@ function addEvent(gatty, uid, payload, pointer = {}) {
         if (yield fileExists(gatty, uniqueFile)) {
             return makePointer(relativeFile, chars);
         }
-        const { eventFileSizeLimitBytes: eventFileSizeLimit } = gatty;
-        if (chars < eventFileSizeLimit) {
+        const { eventFileSizeLimitBytes } = gatty;
+        if (chars < eventFileSizeLimitBytes) {
             // Unique file should contain pointer to BEGINNING of payload
             yield appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
             return appendFile(gatty, relativeFile, payload);
@@ -254,7 +254,7 @@ function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
             // push
             try {
                 const pushed = yield git.push({ dir, url, username, password, token });
-                // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist
+                // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist: pushed.errors will be truthy
                 if (pushed && pushed.errors && pushed.errors.length) {
                     throw pushed;
                 }

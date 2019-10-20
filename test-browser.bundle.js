@@ -254,7 +254,7 @@ function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
             // push
             try {
                 const pushed = yield git.push({ dir, url, username, password, token });
-                // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist
+                // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist: pushed.errors will be truthy
                 if (pushed && pushed.errors && pushed.errors.length) {
                     throw pushed;
                 }

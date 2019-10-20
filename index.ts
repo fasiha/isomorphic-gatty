@@ -247,7 +247,7 @@ export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], 
     // push
     try {
       const pushed = await git.push({dir, url, username, password, token});
-      // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist
+      // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist: pushed.errors will be truthy
       if (pushed && pushed.errors && pushed.errors.length) { throw pushed; }
       return {newSharedUid: last(uids) || lastSharedUid, newEvents};
     } catch (pushed) {

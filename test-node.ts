@@ -12,7 +12,7 @@ const Server = require('node-git-server');
 git.plugins.set('fs', fs);
 
 function slug(s: string) { return s.replace(/[^a-zA-Z0-9]+/g, '-').replace(/-$/, '') }
-const events = 'hello!,hi there!,how are you?'.split(',').map(s => s + '\n');
+const events = 'hello!,hi there!,how are you?'.split(',');
 const uids = events.map(slug);
 
 const REMOTEDIR = 'github';
@@ -102,7 +102,7 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
 
   // Append new events, no new events on remote
   {
-    let events2 = 'chillin,cruisin,flying'.split(',').map(s => s + '\n');
+    let events2 = 'chillin,cruisin,flying'.split(',');
     let uids2 = events2.map(slug);
     const {newEvents, newSharedUid} = await sync(gatty, last(uids), uids2, events2);
     const commits = await git.log({dir: DIR, depth: 5000});
@@ -120,7 +120,7 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
   {
     const gatty2 = await cloneAndRollback(gatty, REMOTEURL, 1);
 
-    let events2 = 'ichi,ni,san'.split(',').map(s => s + '\n');
+    let events2 = 'ichi,ni,san'.split(',');
     let uids2 = events2.map(slug);
     const {newEvents, newSharedUid} = await sync(gatty2, last(uids), uids2, events2);
     const commits = await git.log({dir: DIR2, depth: 5000});
@@ -140,7 +140,7 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
   {
     const gatty2 = await cloneAndRollback(gatty, REMOTEURL, 3);
 
-    let events2 = 'never,give,up'.split(',').map(s => s + '\n');
+    let events2 = 'never,give,up'.split(',');
     let uids2 = events2.map(slug);
     const {newEvents, newSharedUid} = await sync(gatty2, '', uids2, events2);
     const eventsSet = new Set(newEvents);
@@ -160,6 +160,18 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
     rimraf.sync(DIR2);
   }
 
+  // fresh new device, NO events of its own, NOTHING to store: the most common case!
+  {
+    const init: Partial<Gatty> = {pfs: promises, dir: DIR2, eventFileSizeLimitBytes};
+    const gatty2 = await setup(init, REMOTEURL, fs);
+    const {newEvents, newSharedUid} = await sync(gatty2, '', [], []);
+
+    t.equal(newEvents.length, 9 + 3, 'all 12 remote events retrieved');
+    // t.ok(newSharedUid, 'newSharedUid is NOT empty'); // FIXME <sad>
+
+    rimraf.sync(DIR2);
+  }
+
   // Force rollback
   {
     const DIR3 = DIR + '3';
@@ -171,10 +183,10 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
     const gatty2 = {...gatty, dir: DIR2};
     const gatty3 = {...gatty, dir: DIR3};
 
-    let events2 = 'im,first'.split(',').map(s => s + '\n');
+    let events2 = 'im,first'.split(',');
     let uids2 = events2.map(slug);
 
-    let events3 = 'iwas,second,doh'.split(',').map(s => s + '\n');
+    let events3 = 'iwas,second,doh'.split(',');
     let uids3 = events3.map(slug);
 
     const {newEvents: newEvents2, newSharedUid: newSharedUid2} = await sync(gatty2, 'up', uids2, events2);
