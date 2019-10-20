@@ -201,6 +201,7 @@ async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[
                               events: string[]): Promise<{newEvents: string[]}> {
   await mkdirp(gatty);
   const INIT_POINTER = makePointer(`${EVENTS_DIR}/1`, 0);
+  const SEPARATOR = '\n';
 
   if (lastSharedUid && !(await fileExists(gatty, `${UNIQUES_DIR}/${lastSharedUid}`))) {
     throw new Error('lastSharedUid is in fact not shared ' + lastSharedUid);
@@ -210,12 +211,12 @@ async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[
   const endPointer = makePointer(pointer.relativeFile, pointer.chars);
   {
     let i = 0;
-    for (const e of events) { pointer = await addEvent(gatty, uids[i++], e, pointer); }
+    for (const e of events) { pointer = await addEvent(gatty, uids[i++], e + SEPARATOR, pointer); }
   }
   // get all events that others have pushed that we lack, from lastShareUid to endPointer
   const startPointer = lastSharedUid ? await uniqueToPointer(gatty, lastSharedUid) : INIT_POINTER;
   const rawContents = await pointerToPointer(gatty, startPointer, endPointer);
-  const newEvents = rawContents ? rawContents.trim().split('\n') : [];
+  const newEvents = rawContents ? rawContents.trim().split(SEPARATOR) : [];
   return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents};
 }
 

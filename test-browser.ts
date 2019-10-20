@@ -2,10 +2,9 @@ import {inspect, setup, sync} from './index';
 
 function sleep(ms: number) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
-export async function test(url: string, username: string, token: string) {
+export async function test(url: string, username: string, token: string, max = 3, lastSharedUid = '') {
   let gatty = await setup({username, token, corsProxy: 'https://cors.isomorphic-git.org'}, url);
-  let lastSharedUid = '';
-  for (let i = 0; i < 1; i++) {
+  for (let i = 0; i < max; i++) {
     // inspect(gatty);
     const d = new Date().toISOString();
     const text = `### ${d} (${i})`;

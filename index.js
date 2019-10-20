@@ -204,6 +204,7 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
     return __awaiter(this, void 0, void 0, function* () {
         yield mkdirp(gatty);
         const INIT_POINTER = makePointer(`${EVENTS_DIR}/1`, 0);
+        const SEPARATOR = '\n';
         if (lastSharedUid && !(yield fileExists(gatty, `${UNIQUES_DIR}/${lastSharedUid}`))) {
             throw new Error('lastSharedUid is in fact not shared ' + lastSharedUid);
         }
@@ -213,13 +214,13 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
         {
             let i = 0;
             for (const e of events) {
-                pointer = yield addEvent(gatty, uids[i++], e, pointer);
+                pointer = yield addEvent(gatty, uids[i++], e + SEPARATOR, pointer);
             }
         }
         // get all events that others have pushed that we lack, from lastShareUid to endPointer
         const startPointer = lastSharedUid ? yield uniqueToPointer(gatty, lastSharedUid) : INIT_POINTER;
         const rawContents = yield pointerToPointer(gatty, startPointer, endPointer);
-        const newEvents = rawContents ? rawContents.trim().split('\n') : [];
+        const newEvents = rawContents ? rawContents.trim().split(SEPARATOR) : [];
         return { newEvents: lastSharedUid ? newEvents.slice(1) : newEvents };
     });
 }
