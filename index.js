@@ -7,10 +7,15 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const LightningFS = require('@isomorphic-git/lightning-fs');
 const git = require('isomorphic-git');
+const filenamify_1 = __importDefault(require("filenamify"));
 const DEFAULT_DIR = '/gitdir';
+const toFilename = (s) => filenamify_1.default(s, { maxLength: 10000 });
 function setup({ dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, password, token, eventFileSizeLimitBytes = 9216 } = {}, url, fs) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!fs) {
@@ -126,15 +131,16 @@ function addEvent(gatty, uid, payload, pointer = {}) {
             pointer.chars = chars;
         }
         const { relativeFile, chars } = pointer;
-        const uniqueFile = `${UNIQUES_DIR}/${uid}`;
+        const uniqueFile = `${UNIQUES_DIR}/${toFilename(uid)}`;
         if (yield fileExists(gatty, uniqueFile)) {
             return makePointer(relativeFile, chars);
         }
+        const uidPayload = JSON.stringify([uid, payload]) + '\n';
         const { eventFileSizeLimitBytes } = gatty;
         if (chars < eventFileSizeLimitBytes) {
             // Unique file should contain pointer to BEGINNING of payload
             yield appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
-            return appendFile(gatty, relativeFile, payload);
+            return appendFile(gatty, relativeFile, uidPayload);
         }
         const lastFilename = last(relativeFile.split('/')) || '1';
         const parsed = parseInt(lastFilename, BASE);
@@ -144,21 +150,21 @@ function addEvent(gatty, uid, payload, pointer = {}) {
         const newFile = EVENTS_DIR + '/' + (parsed + 1).toString(BASE);
         // Unique file should contain pointer to BEGINNING of payload
         yield appendFile(gatty, uniqueFile, `${newFile}${POINTER_SEP}0`);
-        return appendFile(gatty, newFile, payload);
+        return appendFile(gatty, newFile, uidPayload);
     });
 }
 /**
- * Pointer to BEGINNING of the unique ID's payload
+ * Pointer to BEGINNING of the unique ID's payload. uid is true uid (not filenamified).
  */
-function uniqueToPointer(gatty, unique) {
+function uidToPointer(gatty, uid) {
     return __awaiter(this, void 0, void 0, function* () {
-        if (!unique) {
+        if (!uid) {
             return makePointer('', 0);
         }
-        const pointerStr = yield readFile(gatty, `${UNIQUES_DIR}/${unique}`);
+        const pointerStr = yield readFile(gatty, `${UNIQUES_DIR}/${toFilename(uid)}`);
         const [file, offset] = pointerStr.split(POINTER_SEP);
         if (!file || !offset) {
-            throw new Error('failed to parse unique ' + unique);
+            throw new Error('failed to parse unique ' + uid);
         }
         return makePointer(file, parseInt(offset, BASE));
     });
@@ -200,12 +206,11 @@ function mkdirp({ dir, pfs }) {
         }
     });
 }
-function writeNewEvents(gatty, lastSharedUid, uids, events) {
+function writeAndGetNewEvents(gatty, lastSharedUid, uids, events) {
     return __awaiter(this, void 0, void 0, function* () {
         yield mkdirp(gatty);
         const INIT_POINTER = makePointer(`${EVENTS_DIR}/1`, 0);
-        const SEPARATOR = '\n';
-        if (lastSharedUid && !(yield fileExists(gatty, `${UNIQUES_DIR}/${lastSharedUid}`))) {
+        if (lastSharedUid && !(yield fileExists(gatty, `${UNIQUES_DIR}/${toFilename(lastSharedUid)}`))) {
             throw new Error('lastSharedUid is in fact not shared ' + lastSharedUid);
         }
         // Write to store the unsync'd events
@@ -214,13 +219,13 @@ function writeNewEvents(gatty, lastSharedUid, uids, events) {
         {
             let i = 0;
             for (const e of events) {
-                pointer = yield addEvent(gatty, uids[i++], e + SEPARATOR, pointer);
+                pointer = yield addEvent(gatty, uids[i++], e, pointer);
             }
         }
         // get all events that others have pushed that we lack, from lastShareUid to endPointer
-        const startPointer = lastSharedUid ? yield uniqueToPointer(gatty, lastSharedUid) : INIT_POINTER;
+        const startPointer = lastSharedUid ? yield uidToPointer(gatty, lastSharedUid) : INIT_POINTER;
         const rawContents = yield pointerToPointer(gatty, startPointer, endPointer);
-        const newEvents = rawContents ? rawContents.trim().split(SEPARATOR) : [];
+        const newEvents = rawContents ? rawContents.trim().split('\n').map(s => JSON.parse(s)) : [];
         return { newEvents: lastSharedUid ? newEvents.slice(1) : newEvents };
     });
 }
@@ -241,12 +246,14 @@ function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
             }
             // edit and git add and get new events
             newEvents = [];
-            newEvents = (yield writeNewEvents(gatty, lastSharedUid, uids, events)).newEvents;
+            newEvents = (yield writeAndGetNewEvents(gatty, lastSharedUid, uids, events)).newEvents;
+            const lastNewEvents = last(newEvents);
+            const newSharedUid = last(uids) || (lastNewEvents && lastNewEvents[0]) || lastSharedUid;
             const staged = yield git.listFiles({ dir });
             const statuses = yield Promise.all(staged.map(file => git.status({ dir, filepath: file })));
             const changes = statuses.some(s => s !== 'unmodified');
             if (!changes) {
-                return { newSharedUid: last(uids) || lastSharedUid, newEvents };
+                return { newSharedUid, newEvents };
             }
             // commit
             yield git.commit({ dir, message, author: { name, email } });
@@ -257,7 +264,7 @@ function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
                 if (pushed && pushed.errors && pushed.errors.length) {
                     throw pushed;
                 }
-                return { newSharedUid: last(uids) || lastSharedUid, newEvents };
+                return { newSharedUid, newEvents };
             }
             catch (pushed) {
                 // if push failed, roll back commit and retry, up to some maximum

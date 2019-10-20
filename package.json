@@ -1,6 +1,6 @@
 {
   "name": "isomorphic-gatty",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "An append-only event log for multi-device local-first apps, built on isomorphic-git",
   "main": "index.js",
   "scripts": {
@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "@isomorphic-git/lightning-fs": "^3.3.0",
+    "filenamify": "^4.1.0",
     "isomorphic-git": "^0.55.5"
   }
 }
