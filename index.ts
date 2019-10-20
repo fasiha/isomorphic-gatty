@@ -10,7 +10,7 @@ type PFS = typeof promises;
 export type Gatty = {
   pfs: PFS,
   dir: string,
-  eventFileSizeLimit: number,
+  eventFileSizeLimitBytes: number,
   corsProxy?: string,
   branch?: string,
   depth?: number,
@@ -22,7 +22,7 @@ export type Gatty = {
 };
 
 export async function setup(
-    {dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, password, token, eventFileSizeLimit = 900}:
+    {dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, password, token, eventFileSizeLimitBytes = 9216}:
         Partial<Gatty> = {},
     url: string, fs?: any): Promise<Gatty> {
   if (!fs) {
@@ -33,7 +33,7 @@ export async function setup(
 
   await pfs.mkdir(dir);
   await git.clone({url, dir, corsProxy, ref: branch, singleBranch: true, depth, since, username, password, token});
-  return {url, dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit};
+  return {url, dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimitBytes};
 }
 
 async function readFile({dir, pfs}: Gatty, filepath: string): Promise<string> {
@@ -140,8 +140,8 @@ async function addEvent(gatty: Gatty, uid: string, payload: string, pointer: Par
   const uniqueFile = `${UNIQUES_DIR}/${uid}`;
   if (await fileExists(gatty, uniqueFile)) { return makePointer(relativeFile, chars); }
 
-  const {eventFileSizeLimit} = gatty;
-  if (chars < eventFileSizeLimit) {
+  const {eventFileSizeLimitBytes} = gatty;
+  if (chars < eventFileSizeLimitBytes) {
     // Unique file should contain pointer to BEGINNING of payload
     await appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
     return appendFile(gatty, relativeFile, payload);

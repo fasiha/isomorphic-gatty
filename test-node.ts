@@ -20,7 +20,7 @@ const REMOTEDIR2 = 'github2';
 const DIR = 'whee';
 const DIR2 = DIR + '2';
 
-async function multiLimit(t: tape.Test, eventFileSizeLimit = 900) {
+async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
   directoryCleanup();
 
   // Initialize remote repo
@@ -47,7 +47,7 @@ async function multiLimit(t: tape.Test, eventFileSizeLimit = 900) {
   const REMOTEURL = `http://localhost:8174/${REMOTEDIR}.git`;
 
   // clone a device
-  const init: Partial<Gatty> = {pfs: promises, dir: DIR, eventFileSizeLimit};
+  const init: Partial<Gatty> = {pfs: promises, dir: DIR, eventFileSizeLimitBytes};
   const gatty = await setup(init, REMOTEURL, fs);
 
   // nothing to write, empty store
@@ -73,7 +73,7 @@ async function multiLimit(t: tape.Test, eventFileSizeLimit = 900) {
     const eventFiles = new Set(await promises.readdir(DIR + '/_events'));
     const uniqueFiles = new Set(await promises.readdir(DIR + '/_uniques'));
 
-    if (eventFileSizeLimit > 500) {
+    if (eventFileSizeLimitBytes > 500) {
       t.equal(eventFiles.size, 1, 'only one event file on disk');
     } else {
       t.ok(eventFiles.size > 1, 'more than one event file');

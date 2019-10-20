@@ -27,7 +27,7 @@ const REMOTEDIR = 'github';
 const REMOTEDIR2 = 'github2';
 const DIR = 'whee';
 const DIR2 = DIR + '2';
-function multiLimit(t, eventFileSizeLimit = 900) {
+function multiLimit(t, eventFileSizeLimitBytes = 900) {
     return __awaiter(this, void 0, void 0, function* () {
         directoryCleanup();
         // Initialize remote repo
@@ -50,7 +50,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
         // This is the server URL
         const REMOTEURL = `http://localhost:8174/${REMOTEDIR}.git`;
         // clone a device
-        const init = { pfs: fs_1.promises, dir: DIR, eventFileSizeLimit };
+        const init = { pfs: fs_1.promises, dir: DIR, eventFileSizeLimitBytes };
         const gatty = yield index_1.setup(init, REMOTEURL, fs);
         // nothing to write, empty store
         {
@@ -71,7 +71,7 @@ function multiLimit(t, eventFileSizeLimit = 900) {
             t.deepEqual(newEvents, [], 'no new events');
             const eventFiles = new Set(yield fs_1.promises.readdir(DIR + '/_events'));
             const uniqueFiles = new Set(yield fs_1.promises.readdir(DIR + '/_uniques'));
-            if (eventFileSizeLimit > 500) {
+            if (eventFileSizeLimitBytes > 500) {
                 t.equal(eventFiles.size, 1, 'only one event file on disk');
             }
             else {

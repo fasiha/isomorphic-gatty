@@ -11,7 +11,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const LightningFS = require('@isomorphic-git/lightning-fs');
 const git = require('isomorphic-git');
 const DEFAULT_DIR = '/gitdir';
-function setup({ dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, password, token, eventFileSizeLimit = 900 } = {}, url, fs) {
+function setup({ dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, password, token, eventFileSizeLimitBytes = 9216 } = {}, url, fs) {
     return __awaiter(this, void 0, void 0, function* () {
         if (!fs) {
             fs = new LightningFS('fs', { wipe: true });
@@ -20,7 +20,7 @@ function setup({ dir = DEFAULT_DIR, corsProxy, branch, depth, since, username, p
         const pfs = fs.promises;
         yield pfs.mkdir(dir);
         yield git.clone({ url, dir, corsProxy, ref: branch, singleBranch: true, depth, since, username, password, token });
-        return { url, dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimit };
+        return { url, dir, corsProxy, pfs, branch, depth, since, username, password, token, eventFileSizeLimitBytes };
     });
 }
 exports.setup = setup;
@@ -130,8 +130,8 @@ function addEvent(gatty, uid, payload, pointer = {}) {
         if (yield fileExists(gatty, uniqueFile)) {
             return makePointer(relativeFile, chars);
         }
-        const { eventFileSizeLimit } = gatty;
-        if (chars < eventFileSizeLimit) {
+        const { eventFileSizeLimitBytes } = gatty;
+        if (chars < eventFileSizeLimitBytes) {
             // Unique file should contain pointer to BEGINNING of payload
             yield appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
             return appendFile(gatty, relativeFile, payload);
