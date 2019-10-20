@@ -127,7 +127,8 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
     const uniqueFiles = await promises.readdir(DIR2 + '/_uniques');
     const eventsList = await catEvents(gatty2);
 
-    t.deepEqual(newEvents, ['chillin', 'cruisin', 'flying'], 'got correct remote events');
+    t.deepEqual(newEvents, ['chillin', 'cruisin', 'flying'].map(payload => [slug(payload), payload]),
+                'got correct remote events');
     t.equal(newSharedUid, last(uids2), 'updated up to last local unique');
     t.equal(commits.length, 4, 'now 4 commits');
     t.equal(uniqueFiles.length, events.length + events2.length + 3, 'all 9 events have uniques')
@@ -143,7 +144,7 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
     let events2 = 'never,give,up'.split(',');
     let uids2 = events2.map(slug);
     const {newEvents, newSharedUid} = await sync(gatty2, '', uids2, events2);
-    const eventsSet = new Set(newEvents);
+    const eventsMap = new Map(newEvents);
     const commits = await git.log({dir: DIR2, depth: 5000});
     const uniqueFiles = await promises.readdir(DIR2 + '/_uniques');
     const eventsList = await catEvents(gatty2);
@@ -153,8 +154,10 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
     t.equal(commits.length, 5, 'now 5 commits');
     t.equal(uniqueFiles.length, events.length + events2.length + 3 + 3, 'all 12 events have uniques')
     t.equal(eventsList.trim().split('\n').length, 12, 'all 12 events available');
-    for (const e of 'ichi,ni,san,chillin,cruisin,flying,hello!,hi there!,how are you?'.split(',')) {
-      t.ok(eventsSet.has(e), e + ' present');
+    for (const payload of 'ichi,ni,san,chillin,cruisin,flying,hello!,hi there!,how are you?'.split(',')) {
+      const uid = slug(payload); // we make uid via `slug`.
+      t.ok(eventsMap.has(uid), uid + ' present');
+      t.equal(eventsMap.get(uid), payload, payload + ' present');
     }
 
     rimraf.sync(DIR2);
@@ -167,7 +170,8 @@ async function multiLimit(t: tape.Test, eventFileSizeLimitBytes = 900) {
     const {newEvents, newSharedUid} = await sync(gatty2, '', [], []);
 
     t.equal(newEvents.length, 9 + 3, 'all 12 remote events retrieved');
-    // t.ok(newSharedUid, 'newSharedUid is NOT empty'); // FIXME <sad>
+    t.ok(newSharedUid, 'newSharedUid is NOT empty');
+    t.equal(newSharedUid, slug(last(newEvents)[0]), 'newSharedUid is slug-version of last payload');
 
     rimraf.sync(DIR2);
   }

@@ -8,7 +8,7 @@ export async function test(url: string, username: string, token: string, max = 3
     // inspect(gatty);
     const d = new Date().toISOString();
     const text = `### ${d} (${i})`;
-    const uid = text.replace(/[^0-9]+/g, ' ').trim().replace(/ /g, '_');
+    const uid = text.replace(/ /g, '//').trim().replace(/ /g, '_');
     const {newSharedUid, newEvents} = await sync(gatty, lastSharedUid, [uid], [{text}].map(x => JSON.stringify(x)), 1);
     console.log({lastSharedUid, text, newSharedUid, newEvents});
     lastSharedUid = newSharedUid;

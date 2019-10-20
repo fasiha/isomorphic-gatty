@@ -1,8 +1,10 @@
 const LightningFS = require('@isomorphic-git/lightning-fs');
 import {default as gitts} from 'isomorphic-git';
 const git: typeof gitts = require('isomorphic-git');
+import filenamify from 'filenamify';
 
 const DEFAULT_DIR = '/gitdir';
+const toFilename = (s: string) => filenamify(s, {maxLength: 10000});
 
 import {promises} from 'fs';
 type PFS = typeof promises;
@@ -137,14 +139,15 @@ async function addEvent(gatty: Gatty, uid: string, payload: string, pointer: Par
   }
   const {relativeFile, chars} = pointer as Pointer;
 
-  const uniqueFile = `${UNIQUES_DIR}/${uid}`;
+  const uniqueFile = `${UNIQUES_DIR}/${toFilename(uid)}`;
   if (await fileExists(gatty, uniqueFile)) { return makePointer(relativeFile, chars); }
 
+  const uidPayload = JSON.stringify([uid, payload]) + '\n';
   const {eventFileSizeLimitBytes} = gatty;
   if (chars < eventFileSizeLimitBytes) {
     // Unique file should contain pointer to BEGINNING of payload
     await appendFile(gatty, uniqueFile, `${relativeFile}${POINTER_SEP}${chars.toString(BASE)}`);
-    return appendFile(gatty, relativeFile, payload);
+    return appendFile(gatty, relativeFile, uidPayload);
   }
 
   const lastFilename = last(relativeFile.split('/')) || '1';
@@ -153,17 +156,17 @@ async function addEvent(gatty: Gatty, uid: string, payload: string, pointer: Par
   const newFile = EVENTS_DIR + '/' + (parsed + 1).toString(BASE);
   // Unique file should contain pointer to BEGINNING of payload
   await appendFile(gatty, uniqueFile, `${newFile}${POINTER_SEP}0`);
-  return appendFile(gatty, newFile, payload);
+  return appendFile(gatty, newFile, uidPayload);
 }
 
 /**
- * Pointer to BEGINNING of the unique ID's payload
+ * Pointer to BEGINNING of the unique ID's payload. uid is true uid (not filenamified).
  */
-async function uniqueToPointer(gatty: Gatty, unique: string): Promise<Pointer> {
-  if (!unique) { return makePointer('', 0) }
-  const pointerStr = await readFile(gatty, `${UNIQUES_DIR}/${unique}`);
+async function uidToPointer(gatty: Gatty, uid: string): Promise<Pointer> {
+  if (!uid) { return makePointer('', 0) }
+  const pointerStr = await readFile(gatty, `${UNIQUES_DIR}/${toFilename(uid)}`);
   const [file, offset] = pointerStr.split(POINTER_SEP);
-  if (!file || !offset) { throw new Error('failed to parse unique ' + unique); }
+  if (!file || !offset) { throw new Error('failed to parse unique ' + uid); }
   return makePointer(file, parseInt(offset, BASE));
 }
 
@@ -197,13 +200,13 @@ async function mkdirp({dir, pfs}: Gatty) {
   }
 }
 
-async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[],
-                              events: string[]): Promise<{newEvents: string[]}> {
+export type Event = [string, string];
+async function writeAndGetNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[],
+                                    events: string[]): Promise<{newEvents: Event[]}> {
   await mkdirp(gatty);
   const INIT_POINTER = makePointer(`${EVENTS_DIR}/1`, 0);
-  const SEPARATOR = '\n';
 
-  if (lastSharedUid && !(await fileExists(gatty, `${UNIQUES_DIR}/${lastSharedUid}`))) {
+  if (lastSharedUid && !(await fileExists(gatty, `${UNIQUES_DIR}/${toFilename(lastSharedUid)}`))) {
     throw new Error('lastSharedUid is in fact not shared ' + lastSharedUid);
   }
   // Write to store the unsync'd events
@@ -211,22 +214,22 @@ async function writeNewEvents(gatty: Gatty, lastSharedUid: string, uids: string[
   const endPointer = makePointer(pointer.relativeFile, pointer.chars);
   {
     let i = 0;
-    for (const e of events) { pointer = await addEvent(gatty, uids[i++], e + SEPARATOR, pointer); }
+    for (const e of events) { pointer = await addEvent(gatty, uids[i++], e, pointer); }
   }
   // get all events that others have pushed that we lack, from lastShareUid to endPointer
-  const startPointer = lastSharedUid ? await uniqueToPointer(gatty, lastSharedUid) : INIT_POINTER;
+  const startPointer = lastSharedUid ? await uidToPointer(gatty, lastSharedUid) : INIT_POINTER;
   const rawContents = await pointerToPointer(gatty, startPointer, endPointer);
-  const newEvents = rawContents ? rawContents.trim().split(SEPARATOR) : [];
+  const newEvents = rawContents ? rawContents.trim().split('\n').map(s => JSON.parse(s) as [string, string]) : [];
   return {newEvents: lastSharedUid ? newEvents.slice(1) : newEvents};
 }
 
 export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], events: string[],
-                           maxRetries = 3): Promise<{newSharedUid: string, newEvents: string[]}> {
+                           maxRetries = 3): Promise<{newSharedUid: string, newEvents: Event[]}> {
   const {pfs, dir, username, password, token, url} = gatty;
   const message = `Gatty committing ${uids.length}-long entries on ` + (new Date()).toISOString();
   const name = 'Gatty';
   const email = 'gatty@localhost';
-  let newEvents: string[] = [];
+  let newEvents: Event[] = [];
   for (let retry = 0; retry < maxRetries; retry++) {
     // pull remote (rewind if failed? or re-run setup with clean slate?)
     try {
@@ -234,13 +237,15 @@ export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], 
     } catch { continue; }
     // edit and git add and get new events
     newEvents = [];
-    newEvents = (await writeNewEvents(gatty, lastSharedUid, uids, events)).newEvents;
+    newEvents = (await writeAndGetNewEvents(gatty, lastSharedUid, uids, events)).newEvents;
+    const lastNewEvents = last(newEvents);
+    const newSharedUid = last(uids) || (lastNewEvents && lastNewEvents[0]) || lastSharedUid;
 
     const staged = await git.listFiles({dir});
     const statuses = await Promise.all(staged.map(file => git.status({dir, filepath: file})));
     const changes = statuses.some(s => s !== 'unmodified');
 
-    if (!changes) { return {newSharedUid: last(uids) || lastSharedUid, newEvents}; }
+    if (!changes) { return {newSharedUid, newEvents}; }
 
     // commit
     await git.commit({dir, message, author: {name, email}});
@@ -249,7 +254,7 @@ export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], 
       const pushed = await git.push({dir, url, username, password, token});
       // the above MIGHT not throw if, e.g., you try to push directories to GitHub Gist: pushed.errors will be truthy
       if (pushed && pushed.errors && pushed.errors.length) { throw pushed; }
-      return {newSharedUid: last(uids) || lastSharedUid, newEvents};
+      return {newSharedUid, newEvents};
     } catch (pushed) {
       // if push failed, roll back commit and retry, up to some maximum
       const branch = await git.currentBranch({dir}) || 'master';
