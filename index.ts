@@ -256,14 +256,53 @@ export async function sync(gatty: Gatty, lastSharedUid: string, uids: string[], 
       if (pushed && pushed.errors && pushed.errors.length) { throw pushed; }
       return {newSharedUid, newEvents};
     } catch (pushed) {
+      {
+        const log = await git.log({dir});
+        console.error('Push failed', {pushed, log, staged, changes});
+        const diffs = await getFileStateChanges(pfs, log[0].oid, log[1].oid, dir + '/.git');
+        console.log('diffs', diffs);
+      }
       // if push failed, roll back commit and retry, up to some maximum
       const branch = await git.currentBranch({dir}) || 'master';
       await gitReset({pfs, git, dir, ref: 'HEAD~1', branch, hard: true, cached: false});
+      {
+        const log = await git.log({dir});
+        console.error('Push failed', {log});
+      }
     }
   }
   return {newSharedUid: lastSharedUid, newEvents};
 }
+async function getFileStateChanges(fs: any, commitHash1: string, commitHash2: string, dir: string) {
+  return git.walkBeta1({
+    trees: [git.TREE({fs, gitdir: dir, ref: commitHash1}), git.TREE({fs, gitdir: dir, ref: commitHash2})],
+    map: async function([A, B]) {
+      // ignore directories
+      if (A.fullpath === '.') { return }
+      await A.populateStat()
+      if (A.type === 'tree') { return }
+      await B.populateStat()
+      if (B.type === 'tree') { return }
 
+      // generate ids
+      await A.populateHash();
+      await B.populateHash()
+
+      // determine modification type
+      let type = 'equal'
+      if (A.oid !== B.oid) { type = 'modify' }
+      if (A.oid === undefined) { type = 'add' }
+      if (B.oid === undefined) { type = 'remove' }
+      if (A.oid === undefined && B.oid === undefined) {
+        console.log('Something weird happened:')
+        console.log(A)
+        console.log(B)
+      }
+
+      return { path: `/${A.fullpath}`, type: type }
+    }
+  })
+}
 export async function inspect(gatty: Gatty) {
   const {pfs, dir} = gatty;
   async function printDirContents(dir: string) {

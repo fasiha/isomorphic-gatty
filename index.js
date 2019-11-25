@@ -267,15 +267,68 @@ function sync(gatty, lastSharedUid, uids, events, maxRetries = 3) {
                 return { newSharedUid, newEvents };
             }
             catch (pushed) {
+                {
+                    const log = yield git.log({ dir });
+                    console.error('Push failed', { pushed, log, staged, changes });
+                    const diffs = yield getFileStateChanges(pfs, log[0].oid, log[1].oid, dir + '/.git');
+                    console.log('diffs', diffs);
+                }
                 // if push failed, roll back commit and retry, up to some maximum
                 const branch = (yield git.currentBranch({ dir })) || 'master';
                 yield gitReset({ pfs, git, dir, ref: 'HEAD~1', branch, hard: true, cached: false });
+                {
+                    const log = yield git.log({ dir });
+                    console.error('Push failed', { log });
+                }
             }
         }
         return { newSharedUid: lastSharedUid, newEvents };
     });
 }
 exports.sync = sync;
+function getFileStateChanges(fs, commitHash1, commitHash2, dir) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return git.walkBeta1({
+            trees: [git.TREE({ fs, gitdir: dir, ref: commitHash1 }), git.TREE({ fs, gitdir: dir, ref: commitHash2 })],
+            map: function ([A, B]) {
+                return __awaiter(this, void 0, void 0, function* () {
+                    // ignore directories
+                    if (A.fullpath === '.') {
+                        return;
+                    }
+                    yield A.populateStat();
+                    if (A.type === 'tree') {
+                        return;
+                    }
+                    yield B.populateStat();
+                    if (B.type === 'tree') {
+                        return;
+                    }
+                    // generate ids
+                    yield A.populateHash();
+                    yield B.populateHash();
+                    // determine modification type
+                    let type = 'equal';
+                    if (A.oid !== B.oid) {
+                        type = 'modify';
+                    }
+                    if (A.oid === undefined) {
+                        type = 'add';
+                    }
+                    if (B.oid === undefined) {
+                        type = 'remove';
+                    }
+                    if (A.oid === undefined && B.oid === undefined) {
+                        console.log('Something weird happened:');
+                        console.log(A);
+                        console.log(B);
+                    }
+                    return { path: `/${A.fullpath}`, type: type };
+                });
+            }
+        });
+    });
+}
 function inspect(gatty) {
     return __awaiter(this, void 0, void 0, function* () {
         const { pfs, dir } = gatty;
