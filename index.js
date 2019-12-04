@@ -109,9 +109,10 @@ const POINTER_SEP = '-';
 const BASE = 36;
 function last(arr) { return arr[arr.length - 1]; }
 function makePointer(relativeFile, chars) { return { relativeFile, chars }; }
+function maxString(s) { return s.reduce((prev, curr) => curr > prev ? curr : prev, ''); }
 function lastPointer({ pfs, dir }) {
     return __awaiter(this, void 0, void 0, function* () {
-        const lastFile = last(yield pfs.readdir(`${dir}/${EVENTS_DIR}`));
+        const lastFile = maxString(yield pfs.readdir(`${dir}/${EVENTS_DIR}`));
         if (!lastFile) {
             return makePointer('', 0);
         }
