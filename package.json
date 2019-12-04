@@ -1,6 +1,6 @@
 {
   "name": "isomorphic-gatty",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "An append-only event log for multi-device local-first apps, built on isomorphic-git",
   "main": "index.js",
   "scripts": {

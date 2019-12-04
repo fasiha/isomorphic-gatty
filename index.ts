@@ -120,8 +120,9 @@ type Pointer = {
 };
 function makePointer(relativeFile: string, chars: number): Pointer { return {relativeFile, chars}; }
 
+function maxString(s: string[]): string { return s.reduce((prev, curr) => curr > prev ? curr : prev, ''); }
 async function lastPointer({pfs, dir}: Gatty): Promise<Pointer> {
-  const lastFile = last(await pfs.readdir(`${dir}/${EVENTS_DIR}`));
+  const lastFile = maxString(await pfs.readdir(`${dir}/${EVENTS_DIR}`));
   if (!lastFile) { return makePointer('', 0); }
   const filecontents = await pfs.readFile(`${dir}/${EVENTS_DIR}/${lastFile}`, 'utf8');
   // Cannot replace readFile (expensive) with stat because stat's size is true bytes while we need UTF-16 chars
