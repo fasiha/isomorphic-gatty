@@ -2,6 +2,7 @@
   "name": "isomorphic-gatty",
   "version": "2.1.0",
   "description": "An append-only event log for multi-device local-first apps, built on isomorphic-git",
+  "repository": "https://github.com/fasiha/isomorphic-gatty",
   "main": "index.js",
   "scripts": {
     "test": "tape test-*js",
