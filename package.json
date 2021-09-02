@@ -35,6 +35,6 @@
   "dependencies": {
     "@isomorphic-git/lightning-fs": "^3.3.0",
     "filenamify": "^4.1.0",
-    "isomorphic-git": "^0.55.5"
+    "isomorphic-git": "^1.8.2"
   }
 }
